@@ -17,6 +17,8 @@ import {
   BarChart,
   Settings,
   AccountTree,
+  Psychology,
+  AutoFixHigh,
 } from '@mui/icons-material';
 
 const drawerWidth = 220;
@@ -36,6 +38,8 @@ const menuItems = [
   { text: 'Tickets',         path: '/tickets',  icon: <ConfirmationNumber /> },
   { text: 'Grouped Issues',  path: '/grouped',  icon: <AccountTree /> },
   { text: 'Analytics',       path: '/analytics',icon: <BarChart /> },
+  { text: 'Root Cause Analyzer', path: '/root-cause-analyzer', icon: <Psychology /> },
+  { text: 'Resolution Assistant', path: '/resolution-assistant', icon: <AutoFixHigh /> },
   { text: 'Settings',        path: '/settings', icon: <Settings /> },
 ];
 

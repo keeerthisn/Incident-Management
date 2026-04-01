@@ -112,13 +112,34 @@ const TicketList: React.FC = () => {
     }
   };
 
+  const buildTicketsUrl = () => {
+    const jiraSettings = getJiraSettingsFromStorage();
+    const params = new URLSearchParams();
+
+    if (jiraSettings?.projectKey) {
+      params.set('projectKey', jiraSettings.projectKey);
+    }
+
+    if (jiraSettings?.daysBack && Number.isFinite(jiraSettings.daysBack)) {
+      params.set('daysBack', String(jiraSettings.daysBack));
+    }
+
+    const query = params.toString();
+    return query
+      ? `http://localhost:8000/api/tickets?${query}`
+      : 'http://localhost:8000/api/tickets';
+  };
+
   // Always reads stored tickets from DB (fast, used internally)
   const loadStoredTickets = async () => {
-    const response = await fetch('http://localhost:8000/api/tickets');
+    const response = await fetch(buildTicketsUrl());
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
     const data = await response.json();
-    setTickets(data.tickets || []);
+    const loadedTickets = data.tickets || [];
+    setTickets(loadedTickets);
     setPage(0);
+    // Keep localStorage ticketCount in sync so Dashboard shows the correct total
+    localStorage.setItem('ticketCount', String(loadedTickets.length));
   };
 
   // Initial load — just read DB
@@ -150,19 +171,39 @@ const TicketList: React.FC = () => {
     try {
       const jiraSettings = getJiraSettingsFromStorage();
       if (jiraSettings?.url && jiraSettings?.email && jiraSettings?.apiToken) {
-        // Re-fetch from Jira to update the DB
+        // Start background fetch
         const fetchResp = await fetch('http://localhost:8000/api/fetch-tickets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jiraSettings }),
         });
-        if (!fetchResp.ok) {
+        if (!fetchResp.ok && fetchResp.status !== 409) {
           const errData = await fetchResp.json().catch(() => ({}));
           throw new Error(errData.detail || `Jira fetch failed: ${fetchResp.status}`);
         }
-        const fetchData = await fetchResp.json();
-        await loadStoredTickets();
-        setSnackbar({ open: true, message: `Refreshed — ${fetchData.count ?? 'all'} tickets loaded from Jira`, severity: 'success' });
+
+        // Poll for completion
+        let pollCount = 0;
+        const maxPolls = 300;
+        while (pollCount < maxPolls) {
+          await new Promise(r => setTimeout(r, 1000));
+          pollCount++;
+          try {
+            const statusResp = await fetch('http://localhost:8000/api/fetch-status');
+            const status = await statusResp.json();
+            if (status.done) {
+              if (status.error) throw new Error(status.error);
+              await loadStoredTickets();
+              const result = status.result || {};
+              const mode = result.mode === 'incremental' ? 'Updated' : 'Refreshed';
+              const elapsed = result.elapsed_seconds ? ` in ${result.elapsed_seconds}s` : '';
+              setSnackbar({ open: true, message: `${mode} — ${result.count ?? 'all'} tickets in database${elapsed}`, severity: 'success' });
+              break;
+            }
+          } catch (pollErr) {
+            if (pollCount >= maxPolls) throw pollErr;
+          }
+        }
       } else {
         // No Jira settings, just reload DB
         await loadStoredTickets();
@@ -579,6 +620,13 @@ const TicketList: React.FC = () => {
                         ticket.key
                       )}
                     </Typography>
+                    <Button
+                      size="small"
+                      onClick={() => navigate(`/root-cause-analyzer?ticket=${encodeURIComponent(ticket.key)}`)}
+                      sx={{ mt: 0.5, p: 0, minWidth: 'auto', textTransform: 'none' }}
+                    >
+                      Analyze
+                    </Button>
                   </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
                     <Accordion elevation={0}>

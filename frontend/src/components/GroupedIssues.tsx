@@ -20,6 +20,11 @@ interface Ticket {
   product_name?: string;
 }
 
+interface JiraSettings {
+  projectKey?: string;
+  daysBack?: number;
+}
+
 // ── Issue category definitions ──────────────────────────────────────────────
 // Each category has a label, colour, icon, and keyword list matched against
 // the ticket summary (case-insensitive). Order matters — first match wins.
@@ -146,7 +151,24 @@ const GroupedIssues: React.FC = () => {
 
   const load = () => {
     setLoading(true);
-    fetch('http://localhost:8000/api/tickets')
+    const params = new URLSearchParams();
+    try {
+      const raw = localStorage.getItem('jiraSettings');
+      if (raw) {
+        const settings = JSON.parse(raw) as JiraSettings;
+        if (settings.projectKey) params.set('projectKey', settings.projectKey);
+        if (settings.daysBack && Number.isFinite(settings.daysBack)) {
+          params.set('daysBack', String(settings.daysBack));
+        }
+      }
+    } catch {
+      // keep default unfiltered endpoint
+    }
+
+    const query = params.toString();
+    const url = query ? `http://localhost:8000/api/tickets?${query}` : 'http://localhost:8000/api/tickets';
+
+    fetch(url)
       .then(r => r.json())
       .then(d => setTickets(d.tickets || []))
       .catch(() => setTickets([]))

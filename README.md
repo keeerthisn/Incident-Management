@@ -1,6 +1,6 @@
-# Cove Incident Triage Tool
+# Cove Incident Management Tool
 
-N-able themed web app for triaging Jira incidents — fetch tickets, group by issue type, filter, and review analytics — all in one place.
+N-able themed web app for managing Jira incidents — fetch tickets, group by issue type, filter, and review analytics — all in one place.
 
 ---
 

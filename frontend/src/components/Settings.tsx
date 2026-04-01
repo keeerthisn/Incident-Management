@@ -11,8 +11,10 @@ import {
   Switch,
   FormControlLabel,
   CircularProgress,
+  Chip,
+  Autocomplete,
 } from '@mui/material';
-import { Save, Science } from '@mui/icons-material';
+import { Save, Science, Storage } from '@mui/icons-material';
 
 const Settings: React.FC = () => {
   const [jiraSettings, setJiraSettings] = useState({
@@ -22,6 +24,7 @@ const Settings: React.FC = () => {
     projectKey: 'NCIP',
     daysBack: 30,
     jql: '',
+    confluenceSpaces: '',
   });
   
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'testing' | 'success' | 'error'>('unknown');
@@ -29,13 +32,23 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Confluence debug / test state
+  const [debugTicketKey, setDebugTicketKey] = useState('');
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugResult, setDebugResult] = useState<any>(null);
+
+  // Confluence space picker state
+  const [availableSpaces, setAvailableSpaces] = useState<Array<{key: string; name: string}>>([]);
+  const [spacesLoading, setSpacesLoading] = useState(false);
+  const [spacesError, setSpacesError] = useState<string | null>(null);
+
   // Load existing settings on component mount
   useEffect(() => {
     const savedSettings = localStorage.getItem('jiraSettings');
     if (savedSettings) {
       try {
         const parsedSettings = JSON.parse(savedSettings);
-        setJiraSettings({ url: 'https://n-able.atlassian.net', projectKey: 'NCIP', daysBack: 30, jql: '', ...parsedSettings });
+        setJiraSettings({ url: 'https://n-able.atlassian.net', projectKey: 'NCIP', daysBack: 30, jql: '', confluenceSpaces: '', ...parsedSettings });
       } catch (error) {
         console.error('Error loading saved Jira settings:', error);
       }
@@ -47,18 +60,25 @@ const Settings: React.FC = () => {
       alert('Please fill in Jira URL, Email and API Token first.');
       return;
     }
+
+    const normalizedSettings = {
+      ...jiraSettings,
+      url: jiraSettings.url.trim(),
+      email: jiraSettings.email.trim(),
+      apiToken: jiraSettings.apiToken.trim(),
+    };
     
     setConnectionStatus('testing');
     setConnectionMessage('Connecting to Jira...');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
     
     try {
       const response = await fetch('http://localhost:8000/api/test-connection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(jiraSettings),
+        body: JSON.stringify(normalizedSettings),
         signal: controller.signal,
       });
       
@@ -76,7 +96,7 @@ const Settings: React.FC = () => {
       clearTimeout(timeoutId);
       if (err instanceof Error && err.name === 'AbortError') {
         setConnectionStatus('error');
-        setConnectionMessage('Timed out — check your Jira URL and network');
+        setConnectionMessage('Timed out after 60s — check VPN/network and confirm Jira URL is reachable');
       } else {
         setConnectionStatus('error');
         setConnectionMessage('Cannot reach backend (http://localhost:8000). Is it running?');
@@ -186,13 +206,90 @@ const Settings: React.FC = () => {
                     helperText="Paste the JQL used by your NCIP board quick filter to fetch exactly those tickets. Leave blank to use the default NCIP query."
                   />
                 </Grid>
+
+                {/* Confluence Spaces */}
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                    <TextField
+                      fullWidth
+                      label="Confluence Space Keys (for Knowledge Base search)"
+                      value={jiraSettings.confluenceSpaces}
+                      onChange={(e) => setJiraSettings({ ...jiraSettings, confluenceSpaces: e.target.value })}
+                      placeholder="e.g. ENG,KB,OPS"
+                      helperText={
+                        availableSpaces.length > 0
+                          ? `${availableSpaces.length} spaces available — type a key or click "Load Spaces" to browse`
+                          : 'Comma-separated Confluence space keys to scope Knowledge Base search. Leave blank to search all spaces.'
+                      }
+                    />
+                    <Button
+                      variant="outlined"
+                      startIcon={spacesLoading ? <CircularProgress size={18} /> : <Storage />}
+                      onClick={async () => {
+                        if (!jiraSettings.url || !jiraSettings.email || !jiraSettings.apiToken) {
+                          setSpacesError('Fill in Jira URL, Email, and API Token first.');
+                          return;
+                        }
+                        setSpacesLoading(true);
+                        setSpacesError(null);
+                        try {
+                          const resp = await fetch('http://localhost:8000/api/confluence-spaces', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(jiraSettings),
+                          });
+                          const data = await resp.json().catch(() => ({}));
+                          if (!resp.ok) throw new Error(data.detail || 'Failed to load spaces');
+                          setAvailableSpaces(data.spaces || []);
+                        } catch (err) {
+                          setSpacesError(err instanceof Error ? err.message : 'Failed to load spaces');
+                        } finally {
+                          setSpacesLoading(false);
+                        }
+                      }}
+                      disabled={spacesLoading}
+                      sx={{ minWidth: 150, height: 56, whiteSpace: 'nowrap' }}
+                    >
+                      {spacesLoading ? 'Loading…' : 'Load Spaces'}
+                    </Button>
+                  </Box>
+                  {spacesError && (
+                    <Alert severity="error" sx={{ mt: 1 }}>{spacesError}</Alert>
+                  )}
+                  {availableSpaces.length > 0 && (
+                    <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5, maxHeight: 140, overflowY: 'auto' }}>
+                      {availableSpaces.map((sp) => {
+                        const selected = (jiraSettings.confluenceSpaces || '').toUpperCase().split(',').map(s => s.trim()).includes(sp.key.toUpperCase());
+                        return (
+                          <Chip
+                            key={sp.key}
+                            label={`${sp.key} — ${sp.name}`}
+                            size="small"
+                            color={selected ? 'primary' : 'default'}
+                            variant={selected ? 'filled' : 'outlined'}
+                            onClick={() => {
+                              const current = (jiraSettings.confluenceSpaces || '').split(',').map(s => s.trim()).filter(Boolean);
+                              const upperKey = sp.key.toUpperCase();
+                              if (current.map(c => c.toUpperCase()).includes(upperKey)) {
+                                setJiraSettings({ ...jiraSettings, confluenceSpaces: current.filter(c => c.toUpperCase() !== upperKey).join(',') });
+                              } else {
+                                setJiraSettings({ ...jiraSettings, confluenceSpaces: [...current, sp.key].join(',') });
+                              }
+                            }}
+                            sx={{ cursor: 'pointer' }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  )}
+                </Grid>
                 
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
                     label="Fetch Last N Days"
                     type="number"
-                    inputProps={{ min: 1, max: 90 }}
+                    inputProps={{ min: 1, max: 3650 }}
                     value={jiraSettings.daysBack}
                     onChange={(e) => setJiraSettings({ ...jiraSettings, daysBack: parseInt(e.target.value) || 30 })}
                     helperText="Tickets updated in the last N days (default: 30)"
@@ -262,6 +359,111 @@ const Settings: React.FC = () => {
                   Click <strong>Test Connection</strong> to verify
                 </Typography>
               </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Test Confluence Links */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                🔍 Test Confluence Links
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Enter a ticket key to diagnose how Confluence pages are linked. This checks multiple methods: CQL title search, text search, Jira remote links, and issue links.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+                <TextField
+                  label="Ticket Key"
+                  placeholder="e.g. NCIP-10001"
+                  value={debugTicketKey}
+                  onChange={(e) => setDebugTicketKey(e.target.value.toUpperCase())}
+                  size="small"
+                  sx={{ width: 200 }}
+                />
+                <Button
+                  variant="outlined"
+                  startIcon={debugLoading ? <CircularProgress size={18} /> : <Science />}
+                  disabled={debugLoading || !debugTicketKey.trim()}
+                  onClick={async () => {
+                    setDebugLoading(true);
+                    setDebugResult(null);
+                    try {
+                      const resp = await fetch('http://localhost:8000/api/debug-confluence-pages', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ticketKeys: [debugTicketKey.trim()], jiraSettings: jiraSettings }),
+                      });
+                      const data = await resp.json().catch(() => ({}));
+                      setDebugResult(data);
+                    } catch (err) {
+                      setDebugResult({ error: err instanceof Error ? err.message : 'Failed' });
+                    } finally {
+                      setDebugLoading(false);
+                    }
+                  }}
+                >
+                  {debugLoading ? 'Testing…' : 'Test'}
+                </Button>
+              </Box>
+              {debugResult && (
+                <Box sx={{ bgcolor: '#f5f5f5', borderRadius: 1, p: 2, maxHeight: 400, overflow: 'auto' }}>
+                  <Typography variant="subtitle2" gutterBottom>Confluence Space Keys configured: {JSON.stringify(debugResult.spaceKeys || [])}</Typography>
+
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Sample pages in space ({(debugResult.samplePages || []).length}):</Typography>
+                  {(debugResult.samplePages || []).map((p: any, i: number) => (
+                    <Typography key={i} variant="body2" sx={{ ml: 2 }}>• {p.title} [{p.space}]</Typography>
+                  ))}
+                  {debugResult.samplePagesError && <Alert severity="error" sx={{ mt: 1 }}>{debugResult.samplePagesError}</Alert>}
+
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>CQL Title search results:</Typography>
+                  {Object.keys(debugResult.titleSearchResults || {}).length === 0
+                    ? <Typography variant="body2" sx={{ ml: 2 }} color="text.secondary">No matches</Typography>
+                    : Object.entries(debugResult.titleSearchResults || {}).map(([title, url]: any) => (
+                      <Typography key={title} variant="body2" sx={{ ml: 2 }}>• {title} → {url}</Typography>
+                    ))
+                  }
+
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>CQL Text search results:</Typography>
+                  {Object.keys(debugResult.textSearchResults || {}).length === 0
+                    ? <Typography variant="body2" sx={{ ml: 2 }} color="text.secondary">No matches</Typography>
+                    : Object.entries(debugResult.textSearchResults || {}).map(([title, url]: any) => (
+                      <Typography key={title} variant="body2" sx={{ ml: 2 }}>• {title} → {url}</Typography>
+                    ))
+                  }
+
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Jira Remote Links:</Typography>
+                  {Object.entries(debugResult.jiraRemoteLinks || {}).map(([key, val]: any) => (
+                    <Box key={key} sx={{ ml: 2 }}>
+                      <Typography variant="body2" fontWeight="bold">{key}:</Typography>
+                      {Array.isArray(val)
+                        ? val.length === 0
+                          ? <Typography variant="body2" sx={{ ml: 2 }} color="text.secondary">None</Typography>
+                          : val.map((l: any, i: number) => <Typography key={i} variant="body2" sx={{ ml: 2 }}>• {l.title} → {l.url}</Typography>)
+                        : <Typography variant="body2" sx={{ ml: 2 }} color="error.main">{String(val)}</Typography>
+                      }
+                    </Box>
+                  ))}
+
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Jira Issue Links:</Typography>
+                  {Object.entries(debugResult.jiraIssueLinks || {}).map(([key, val]: any) => (
+                    <Box key={key} sx={{ ml: 2 }}>
+                      <Typography variant="body2" fontWeight="bold">{key}:</Typography>
+                      {Array.isArray(val)
+                        ? val.length === 0
+                          ? <Typography variant="body2" sx={{ ml: 2 }} color="text.secondary">None</Typography>
+                          : val.map((l: any, i: number) => (
+                            <Typography key={i} variant="body2" sx={{ ml: 2 }}>
+                              • {l.type}: {l.outwardIssue || l.inwardIssue || '—'}
+                            </Typography>
+                          ))
+                        : <Typography variant="body2" sx={{ ml: 2 }} color="error.main">{String(val)}</Typography>
+                      }
+                    </Box>
+                  ))}
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>

@@ -204,7 +204,7 @@ def _extract_action_lines(text: str, max_items: int = 6) -> list[str]:
         if key in seen:
             continue
         seen.add(key)
-        picked.append(_trim(line, 180))
+        picked.append(_trim(line, 400))
         if len(picked) >= max_items:
             break
     return picked
@@ -1190,8 +1190,9 @@ async def resolution_assistant(req: ResolutionAssistantRequest):
         local_params.append(resolved_prefix)
 
         if lookback_days:
-            local_conditions.append("datetime(replace(substr(created_date,1,19),'T',' ')) >= datetime('now', ?)")
-            local_params.append(f"-{lookback_days} day")
+            cutoff = (datetime.utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+            local_conditions.append("substr(created_date, 1, 10) >= ?")
+            local_params.append(cutoff)
 
         if local_conditions:
             local_query += " AND " + " AND ".join(local_conditions)
@@ -1256,7 +1257,7 @@ async def resolution_assistant(req: ResolutionAssistantRequest):
                 "resolvedAt": "",
                 "components": cand_components,
                 "labels": cand_labels_list,
-                "resolutionSnippet": _trim(cand_resolution, 220),
+                "resolutionSnippet": _trim(cand_resolution, 600),
                 "topApproaches": top_approaches,
                 "reference": f"{settings.url.rstrip('/')}/browse/{issue_key}" if issue_key else None,
                 "rootCauseSignals": {
@@ -1315,7 +1316,7 @@ async def resolution_assistant(req: ResolutionAssistantRequest):
                     kb_articles.append({
                         "title": title,
                         "url": url,
-                        "excerpt": _trim(excerpt, 280),
+                        "excerpt": _trim(excerpt, 600),
                     })
             else:
                 kb_error = f"Confluence search returned {kb_resp.status_code}"
@@ -1377,17 +1378,24 @@ async def resolution_assistant(req: ResolutionAssistantRequest):
                     component_frequency[c] = component_frequency.get(c, 0) + 1
         common_component = max(component_frequency.items(), key=lambda x: x[1])[0] if component_frequency else None
 
+        # ── Run deep root cause classification on the target ticket ──
+        rca_result = _classify_root_cause(target)
+
+        # Build enriched evidence combining RCA engine + similarity context
+        rca_evidence = list(rca_result.get("keyIndicators", []))
+        rca_evidence.append(f"{len(top_matches)} related resolved NCIPs found in the last {lookback_days} days.")
+        if top_matches:
+            rca_evidence.append(f"Top similar ticket confidence: {int(round(top_matches[0]['similarity'] * 100))}%.")
+        if common_component:
+            rca_evidence.append(f"Most common impacted component across similar tickets: {common_component}.")
+
         probable_root_cause = {
-            "hypothesis": (
-                f"Likely related to {common_component} based on repeated patterns in recently resolved NCIPs."
-                if common_component else
-                "Likely recurrence of a known issue pattern from recently resolved NCIPs."
-            ),
-            "evidence": [
-                f"{len(top_matches)} related resolved NCIPs found in the last {lookback_days} days.",
-                f"Top match confidence: {int(round((top_matches[0]['similarity'] if top_matches else 0) * 100))}%.",
-                (f"Most common impacted component: {common_component}." if common_component else "No dominant component identified from similar tickets."),
-            ],
+            "summary": rca_result.get("rootCauseCategory", "Unknown / Needs Investigation"),
+            "hypothesis": rca_result.get("shortSummary", ""),
+            "evidence": rca_evidence,
+            "confidence": rca_result.get("confidence", 0),
+            "scoreBreakdown": rca_result.get("scoreBreakdown", {}),
+            "suggestedNextSteps": rca_result.get("suggestedNextSteps", []),
             "timelineSignals": {
                 "recentSpikeCount14d": recent_high_similarity,
                 "lookbackDays": lookback_days,
@@ -1689,54 +1697,21 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         jira_url = f"{settings.url.rstrip('/')}/rest/api/3/search/jql"
 
         days_back = getattr(settings, 'daysBack', 30)
-
-        # ── Determine incremental-vs-full mode ──
-        incremental = False
-        latest_created: Optional[str] = None
-        existing_count = 0
         project_prefix = _resolve_key_prefix(settings.projectKey)
 
-        if not force_full:
-            try:
-                conn_check = sqlite3.connect('tickets.db')
-                c_check = conn_check.cursor()
-                c_check.execute(
-                    "SELECT COUNT(*), MAX(created_date) FROM tickets WHERE jira_key LIKE ?",
-                    (project_prefix,),
-                )
-                row = c_check.fetchone()
-                existing_count = row[0] or 0
-                latest_created = row[1] or None
-                conn_check.close()
-            except Exception:
-                existing_count = 0
-                latest_created = None
-
-            if existing_count > 0 and latest_created:
-                incremental = True
-
         # ── Build JQL ──
+        # Always fetch the full daysBack window so local DB exactly
+        # mirrors what Jira returns for the same query.  No incremental
+        # mode — it caused stale tickets to accumulate and counts to drift.
         if getattr(settings, 'jql', None):
             jql = settings.jql  # type: ignore[assignment]
-        elif incremental and latest_created:
-            # Fetch tickets that were created OR updated since our latest
-            # stored ticket (minus 1 day overlap to catch edge-cases).
-            # Extract just the date portion from ISO timestamp.
-            date_part = latest_created[:10]  # "YYYY-MM-DD"
-            jql = (
-                f'project = {settings.projectKey} '
-                f'AND (created >= "{date_part}" OR updated >= "{date_part}") '
-                f'ORDER BY created DESC'
-            )
-            print(f"[fetch] INCREMENTAL mode — {existing_count} tickets already in DB, "
-                  f"fetching created/updated >= {date_part}")
         else:
             jql = (
                 f'project = {settings.projectKey} '
                 f'AND created >= -{days_back}d '
                 f'ORDER BY created DESC'
             )
-            print(f"[fetch] FULL mode — fetching last {days_back} days")
+        print(f"[fetch] FULL mode — fetching last {days_back} days, JQL: {jql}")
         
         # Jira API request basics
         auth = HTTPBasicAuth(settings.email, settings.apiToken)
@@ -1792,7 +1767,7 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         start_at = 0
         # Explicitly name required fields — /search/jql ignores *all* for custom fields
         base_fields = ["summary", "status", "priority", "assignee", "created",
-                       "components", "description", "labels", "resolution", "resolutiondate", "comment"]
+                       "components", "description", "labels", "resolution", "resolutiondate", "comment", "issuetype"]
         if nci_severity_field_id:
             base_fields.append(nci_severity_field_id)
         FIELDS = ",".join(base_fields)
@@ -1805,10 +1780,14 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 "jql": jql,
                 "maxResults": page_size,
                 "fields": FIELDS,
-                "startAt": start_at,
             }
+            # Cursor pagination (nextPageToken) and offset pagination
+            # (startAt) are mutually exclusive in Jira Cloud's /search/jql.
+            # Sending both can cause Jira to skip or repeat issues.
             if next_page_token:
                 params["nextPageToken"] = next_page_token
+            else:
+                params["startAt"] = start_at
 
             _jira_session.auth = auth
             response = _jira_session.get(
@@ -1874,7 +1853,8 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             print(f"[fetch] partial page ({len(issues)} < {page_size}), stopping at {len(all_issues)} issues")
             break
 
-        print(f"[fetch] DONE: total fetched = {len(all_issues)} issues in {page_num} pages")
+        print(f"[fetch] DONE: total fetched = {len(all_issues)} issues in {page_num} pages "
+              f"(Jira reported total = {total_reported})")
 
         # Process and store tickets
         tickets = []
@@ -1885,11 +1865,9 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         # inserted earlier (keys like INC-001, INC-002, ...).
         cursor.execute("DELETE FROM tickets WHERE jira_key LIKE 'INC-%'")
 
-        # In full-refresh mode, wipe existing project tickets first so
-        # local count matches the latest JQL result instead of accumulating
-        # stale rows.  In incremental mode, just upsert (INSERT OR REPLACE).
-        if not incremental:
-            cursor.execute("DELETE FROM tickets WHERE jira_key LIKE ?", (project_prefix,))
+        # Wipe existing project tickets before re-inserting the fresh set
+        # from Jira.  This guarantees the local DB count matches Jira exactly.
+        cursor.execute("DELETE FROM tickets WHERE jira_key LIKE ?", (project_prefix,))
 
         for issue in all_issues:
             fields = issue.get("fields") or {}
@@ -2223,6 +2201,9 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             dash_idx = first_key.find("-")
             if dash_idx > 0:
                 real_prefix = f"{first_key[:dash_idx]}-%"
+
+        # Count what we just inserted — should match Jira's total exactly
+        # since we wiped and re-inserted from the fresh fetch.
         cursor_count = conn.cursor()
         cursor_count.execute("SELECT COUNT(*) FROM tickets WHERE jira_key LIKE ?", (real_prefix,))
         total_in_db = cursor_count.fetchone()[0] or 0
@@ -2235,15 +2216,15 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
 
         elapsed = round(_t.monotonic() - fetch_start, 1)
         fetched_count = len(tickets)
-        mode_label = "incremental" if incremental else "full"
-        print(f"[fetch] {mode_label} complete: {fetched_count} from Jira, {total_in_db} total in DB, took {elapsed}s")
+        print(f"[fetch] complete: {fetched_count} from Jira, {total_in_db} in DB, "
+              f"Jira reported total={total_reported}, took {elapsed}s")
         
         return {
             "status": "success",
-            "message": f"Fetched {fetched_count} tickets from Jira ({mode_label}). {total_in_db} total in database.",
+            "message": f"Fetched {fetched_count} tickets from Jira. {total_in_db} total in database.",
             "count": total_in_db,
+            "jira_total": total_reported,
             "fetched": fetched_count,
-            "mode": mode_label,
             "elapsed_seconds": elapsed,
             "tickets": [],  # omit full payload; frontend reads from /api/tickets
         }
@@ -2292,8 +2273,12 @@ async def get_stored_tickets(
             params.append(_resolve_key_prefix(projectKey))
 
         if daysBack:
-            conditions.append("datetime(replace(substr(created_date,1,19),'T',' ')) >= datetime('now', ?)")
-            params.append(f"-{daysBack} day")
+            # Compute cutoff as a plain YYYY-MM-DD string so the
+            # comparison works reliably against any ISO-8601 variant
+            # stored in created_date (with or without timezone suffix).
+            cutoff = (datetime.utcnow() - timedelta(days=daysBack)).strftime("%Y-%m-%d")
+            conditions.append("substr(created_date, 1, 10) >= ?")
+            params.append(cutoff)
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -2372,8 +2357,9 @@ async def get_duplicate_candidates(
             params.append(_resolve_key_prefix(normalized_project))
 
         if normalized_days:
-            conditions.append("datetime(replace(substr(created_date,1,19),'T',' ')) >= datetime('now', ?)")
-            params.append(f"-{normalized_days} day")
+            cutoff = (datetime.utcnow() - timedelta(days=normalized_days)).strftime("%Y-%m-%d")
+            conditions.append("substr(created_date, 1, 10) >= ?")
+            params.append(cutoff)
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)

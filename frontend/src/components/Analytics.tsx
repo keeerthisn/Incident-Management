@@ -9,6 +9,7 @@ import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveCont
 
 interface Ticket {
   key: string;
+  summary: string;
   priority: string;
   status: string;
   routing_suggestion: string | null;
@@ -288,14 +289,40 @@ const Analytics: React.FC = () => {
   const topProducts = Object.entries(productCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const PRODUCT_COLORS = ['#5B2D91', '#0288d1', '#f57c00', '#4caf50', '#d32f2f', '#7C3AED', '#00897b', '#c62828'];
 
-  // Issue type breakdown
-  const issueTypeCounts: Record<string, number> = {};
+  // Incident category classification (keyword-based, same logic as Grouped Issues)
+  const CATEGORY_KEYWORDS: Array<{ label: string; keywords: string[] }> = [
+    { label: 'Backup Failures', keywords: ['backup fail', 'backup error', 'failed backup', 'backup unsuccessful'] },
+    { label: 'Backup Performance', keywords: ['backup slow', 'backup speed', 'backup throughput', 'backup duration', 'long backup'] },
+    { label: 'Backup Management', keywords: ['backup policy', 'backup schedule', 'backup config', 'retention', 'backup plan'] },
+    { label: 'Restore / Recovery', keywords: ['restore', 'recovery', 'point-in-time', 'granular restore'] },
+    { label: 'Export Issues', keywords: ['export', 'download', 'zip', 'pst'] },
+    { label: 'Timeout / Connection', keywords: ['timeout', 'timed out', 'connection', 'disconnect', 'network', 'socket'] },
+    { label: 'Authentication / Access', keywords: ['auth', 'login', 'credential', 'password', 'token', 'access denied', 'oauth', 'sso'] },
+    { label: 'Storage / Quota', keywords: ['storage', 'quota', 'disk', 'space', 'capacity', 'full'] },
+    { label: 'Sync / Replication', keywords: ['sync', 'replication', 'replicate', 'mirror'] },
+    { label: 'Email / Exchange', keywords: ['email', 'exchange', 'mailbox', 'outlook', 'smtp'] },
+    { label: 'SharePoint / OneDrive', keywords: ['sharepoint', 'onedrive', 'teams', 'm365', 'microsoft 365'] },
+    { label: 'UI / Portal', keywords: ['ui', 'portal', 'dashboard', 'console', 'display', 'page'] },
+    { label: 'API / Integration', keywords: ['api', 'integration', 'webhook', 'endpoint', 'rest', 'sdk'] },
+    { label: 'Performance / Slow', keywords: ['slow', 'performance', 'latency', 'lag', 'degraded', 'high cpu', 'memory'] },
+    { label: 'Error / Crash', keywords: ['error', 'crash', 'exception', '500', '503', 'failed'] },
+  ];
+  const incidentCategoryCounts: Record<string, number> = {};
   tickets.forEach(t => {
-    if (t.issue_type) {
-      issueTypeCounts[t.issue_type] = (issueTypeCounts[t.issue_type] || 0) + 1;
+    const text = `${t.summary || ''} ${t.jira_components || ''}`.toLowerCase();
+    let matched = false;
+    for (const cat of CATEGORY_KEYWORDS) {
+      if (cat.keywords.some(kw => text.includes(kw))) {
+        incidentCategoryCounts[cat.label] = (incidentCategoryCounts[cat.label] || 0) + 1;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      incidentCategoryCounts['Other'] = (incidentCategoryCounts['Other'] || 0) + 1;
     }
   });
-  const issueTypeData = Object.entries(issueTypeCounts).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+  const issueTypeData = Object.entries(incidentCategoryCounts).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
   const hasIssueTypeData = issueTypeData.length > 0;
 
   // Pie chart data: components
@@ -457,21 +484,12 @@ const Analytics: React.FC = () => {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" fontWeight={700} gutterBottom>Issue Type</Typography>
+              <Typography variant="h6" fontWeight={700} gutterBottom>Incident Categories</Typography>
               {!hasIssueTypeData ? (
                 <Box sx={{ textAlign: 'center', mt: 3 }}>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Issue type data not available yet.
+                    No tickets loaded yet.
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                    Re-sync tickets from Jira to populate issue types.
-                  </Typography>
-                  <Button size="small" variant="contained"
-                    startIcon={syncing ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <Refresh />}
-                    onClick={syncFromJira} disabled={syncing}
-                    sx={{ borderRadius: 20, background: 'linear-gradient(135deg,#5B2D91,#7C3AED)', textTransform: 'none' }}>
-                    {syncing ? 'Syncing…' : 'Sync from Jira'}
-                  </Button>
                 </Box>
               ) : (
                 <ResponsiveContainer width="100%" height={280}>

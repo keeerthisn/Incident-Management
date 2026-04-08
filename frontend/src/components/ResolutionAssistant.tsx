@@ -681,16 +681,73 @@ const ResolutionAssistant: React.FC = () => {
               {/* Tab 0: Root Cause */}
               {investigateTab === 0 && investigateResult.probableRootCause && (
                 <Box>
-                  <Typography variant="subtitle1" fontWeight="bold">
-                    {investigateResult.probableRootCause.summary}
-                  </Typography>
+                  {/* Root cause category + confidence */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                    <Chip
+                      label={investigateResult.probableRootCause.summary || 'Unknown'}
+                      color={investigateResult.probableRootCause.summary === 'Unknown / Needs Investigation' ? 'default' : 'primary'}
+                      sx={{ fontWeight: 'bold', fontSize: '0.95rem', py: 0.5 }}
+                    />
+                    {investigateResult.probableRootCause.confidence != null && (
+                      <Chip
+                        label={`Confidence: ${Math.round(investigateResult.probableRootCause.confidence * 100)}%`}
+                        size="small"
+                        color={investigateResult.probableRootCause.confidence >= 0.7 ? 'success' : investigateResult.probableRootCause.confidence >= 0.5 ? 'warning' : 'default'}
+                        variant="outlined"
+                      />
+                    )}
+                  </Box>
+
+                  {/* Hypothesis / short summary */}
+                  {investigateResult.probableRootCause.hypothesis && (
+                    <Typography variant="body1" sx={{ mb: 1.5, color: 'text.secondary' }}>
+                      {investigateResult.probableRootCause.hypothesis}
+                    </Typography>
+                  )}
+
+                  {/* Key indicators / evidence */}
+                  <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 0.5 }}>Key Indicators</Typography>
                   <List dense>
                     {(investigateResult.probableRootCause.evidence || []).map((e: string, i: number) => (
                       <ListItem key={i}><ListItemText primary={e} /></ListItem>
                     ))}
                   </List>
+
+                  {/* Score breakdown across categories */}
+                  {investigateResult.probableRootCause.scoreBreakdown && Object.keys(investigateResult.probableRootCause.scoreBreakdown).length > 0 && (
+                    <Box sx={{ mt: 1.5 }}>
+                      <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1 }}>Score Breakdown</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {Object.entries(investigateResult.probableRootCause.scoreBreakdown as Record<string, number>)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([category, score]) => (
+                            <Chip
+                              key={category}
+                              label={`${category}: ${score}`}
+                              size="small"
+                              variant={category === investigateResult.probableRootCause.summary ? 'filled' : 'outlined'}
+                              color={category === investigateResult.probableRootCause.summary ? 'primary' : 'default'}
+                            />
+                          ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {/* Suggested next steps */}
+                  {(investigateResult.probableRootCause.suggestedNextSteps || []).length > 0 && (
+                    <Box sx={{ mt: 1.5 }}>
+                      <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 0.5 }}>Suggested Next Steps</Typography>
+                      <List dense>
+                        {(investigateResult.probableRootCause.suggestedNextSteps as string[]).map((step: string, i: number) => (
+                          <ListItem key={i}><ListItemText primary={`${i + 1}. ${step}`} /></ListItem>
+                        ))}
+                      </List>
+                    </Box>
+                  )}
+
+                  {/* Risk indicators */}
                   {investigateResult.riskIndicators && (
-                    <Alert severity={investigateResult.riskIndicators.widespreadRisk ? 'warning' : 'success'} sx={{ mt: 1 }}>
+                    <Alert severity={investigateResult.riskIndicators.widespreadRisk ? 'warning' : 'success'} sx={{ mt: 1.5 }}>
                       {investigateResult.riskIndicators.trendSummary}
                     </Alert>
                   )}

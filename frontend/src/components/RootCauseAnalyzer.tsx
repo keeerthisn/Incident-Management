@@ -19,6 +19,7 @@ import {
   OpenInNew,
 } from '@mui/icons-material';
 import { useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 interface JiraSettings {
   url: string;
@@ -112,7 +113,7 @@ const RootCauseAnalyzer: React.FC = () => {
     try {
       // Fire all three requests in parallel
       const [analysisResponse, rovoResponse, confluenceResponse] = await Promise.allSettled([
-        fetch('http://localhost:8000/api/root-cause-analyze', {
+        fetch(`${API_BASE_URL}/api/root-cause-analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -120,7 +121,7 @@ const RootCauseAnalyzer: React.FC = () => {
             jiraSettings,
           }),
         }),
-        fetch('http://localhost:8000/api/rovo-summarize', {
+        fetch(`${API_BASE_URL}/api/rovo-summarize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -128,7 +129,7 @@ const RootCauseAnalyzer: React.FC = () => {
             jiraSettings,
           }),
         }),
-        fetch('http://localhost:8000/api/batch-confluence-links', {
+        fetch(`${API_BASE_URL}/api/batch-confluence-links`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

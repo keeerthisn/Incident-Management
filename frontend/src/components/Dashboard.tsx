@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { PlayArrow, GetApp, Settings as SettingsIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 interface JiraSettings {
   url: string;
@@ -65,7 +66,7 @@ const Dashboard: React.FC = () => {
     // Auto-dismiss the "Jira Connected" banner after 5 seconds
     connectedTimerRef.current = setTimeout(() => setShowConnectedAlert(false), 5000);
     // Load live stats from stored tickets (filtered by configured scope)
-    let ticketsUrl = 'http://localhost:8000/api/tickets';
+    let ticketsUrl = `${API_BASE_URL}/api/tickets`;
     try {
       const savedSettings = localStorage.getItem('jiraSettings');
       if (savedSettings) {
@@ -155,7 +156,7 @@ const Dashboard: React.FC = () => {
         : {};
       
       // Fire the fetch — returns immediately (background task)
-      const response = await fetch('http://localhost:8000/api/fetch-tickets', {
+      const response = await fetch(`${API_BASE_URL}/api/fetch-tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -183,7 +184,7 @@ const Dashboard: React.FC = () => {
         await new Promise(r => setTimeout(r, 1000));
         pollCount++;
         try {
-          const statusResp = await fetch('http://localhost:8000/api/fetch-status');
+          const statusResp = await fetch(`${API_BASE_URL}/api/fetch-status`);
           const status = await statusResp.json();
           
           // Update progress display with live ticket count
@@ -202,7 +203,7 @@ const Dashboard: React.FC = () => {
 
             // Refresh live stats
             try {
-              let statsUrl = 'http://localhost:8000/api/tickets';
+              let statsUrl = `${API_BASE_URL}/api/tickets`;
               const savedS = localStorage.getItem('jiraSettings');
               if (savedS) {
                 const s = JSON.parse(savedS);
@@ -245,7 +246,7 @@ const Dashboard: React.FC = () => {
       setFetchError('Fetch took too long (>5 minutes). Check backend logs.');
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        setFetchError('Cannot reach backend (http://localhost:8000). Start the backend server first.');
+        setFetchError(`Cannot reach backend (${API_BASE_URL}). Start the backend server first.`);
       } else {
         setFetchError(error instanceof Error ? error.message : 'Failed to fetch tickets');
       }

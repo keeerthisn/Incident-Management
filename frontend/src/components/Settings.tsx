@@ -15,6 +15,7 @@ import {
   Autocomplete,
 } from '@mui/material';
 import { Save, Science, Storage } from '@mui/icons-material';
+import { API_BASE_URL } from '../config';
 
 const Settings: React.FC = () => {
   const [jiraSettings, setJiraSettings] = useState({
@@ -75,7 +76,7 @@ const Settings: React.FC = () => {
     const timeoutId = setTimeout(() => controller.abort(), 60000);
     
     try {
-      const response = await fetch('http://localhost:8000/api/test-connection', {
+      const response = await fetch(`${API_BASE_URL}/api/test-connection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalizedSettings),
@@ -99,7 +100,7 @@ const Settings: React.FC = () => {
         setConnectionMessage('Timed out after 60s — check VPN/network and confirm Jira URL is reachable');
       } else {
         setConnectionStatus('error');
-        setConnectionMessage('Cannot reach backend (http://localhost:8000). Is it running?');
+        setConnectionMessage(`Cannot reach backend (${API_BASE_URL}). Is it running?`);
       }
     }
   };
@@ -233,7 +234,7 @@ const Settings: React.FC = () => {
                         setSpacesLoading(true);
                         setSpacesError(null);
                         try {
-                          const resp = await fetch('http://localhost:8000/api/confluence-spaces', {
+                          const resp = await fetch(`${API_BASE_URL}/api/confluence-spaces`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(jiraSettings),
@@ -390,7 +391,7 @@ const Settings: React.FC = () => {
                     setDebugLoading(true);
                     setDebugResult(null);
                     try {
-                      const resp = await fetch('http://localhost:8000/api/debug-confluence-pages', {
+                      const resp = await fetch(`${API_BASE_URL}/api/debug-confluence-pages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ticketKeys: [debugTicketKey.trim()], jiraSettings: jiraSettings }),

@@ -8,6 +8,7 @@ import {
   ExpandMore, ExpandLess, Search, Refresh,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 interface Ticket {
   key: string;
@@ -166,7 +167,7 @@ const GroupedIssues: React.FC = () => {
     }
 
     const query = params.toString();
-    const url = query ? `http://localhost:8000/api/tickets?${query}` : 'http://localhost:8000/api/tickets';
+    const url = query ? `${API_BASE_URL}/api/tickets?${query}` : `${API_BASE_URL}/api/tickets`;
 
     fetch(url)
       .then(r => r.json())

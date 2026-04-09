@@ -33,6 +33,7 @@ import {
   Psychology,
 } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 interface Ticket {
   key: string;
@@ -126,8 +127,8 @@ const TicketList: React.FC = () => {
 
     const query = params.toString();
     return query
-      ? `http://localhost:8000/api/tickets?${query}`
-      : 'http://localhost:8000/api/tickets';
+      ? `${API_BASE_URL}/api/tickets?${query}`
+      : `${API_BASE_URL}/api/tickets`;
   };
 
   // Always reads stored tickets from DB (fast, used internally)
@@ -154,7 +155,7 @@ const TicketList: React.FC = () => {
       await loadStoredTickets();
     } catch (err) {
       if (err instanceof TypeError && (err as TypeError).message.includes('fetch')) {
-        setError('Cannot reach backend (http://localhost:8000). Is it running?');
+        setError(`Cannot reach backend (${API_BASE_URL}). Is it running?`);
       } else {
         setError(err instanceof Error ? err.message : 'Failed to load tickets');
       }
@@ -172,7 +173,7 @@ const TicketList: React.FC = () => {
       const jiraSettings = getJiraSettingsFromStorage();
       if (jiraSettings?.url && jiraSettings?.email && jiraSettings?.apiToken) {
         // Start background fetch
-        const fetchResp = await fetch('http://localhost:8000/api/fetch-tickets', {
+        const fetchResp = await fetch(`${API_BASE_URL}/api/fetch-tickets`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jiraSettings }),
@@ -189,7 +190,7 @@ const TicketList: React.FC = () => {
           await new Promise(r => setTimeout(r, 1000));
           pollCount++;
           try {
-            const statusResp = await fetch('http://localhost:8000/api/fetch-status');
+            const statusResp = await fetch(`${API_BASE_URL}/api/fetch-status`);
             const status = await statusResp.json();
             if (status.done) {
               if (status.error) throw new Error(status.error);
@@ -222,7 +223,7 @@ const TicketList: React.FC = () => {
     setAnalyzing(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:8000/api/analyze-tickets', {
+      const response = await fetch(`${API_BASE_URL}/api/analyze-tickets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

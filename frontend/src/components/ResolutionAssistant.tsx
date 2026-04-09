@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { OpenInNew, Search, ExpandLess, ExpandMore, BugReport, MenuBook } from '@mui/icons-material';
 import { Tooltip } from '@mui/material';
+import { API_BASE_URL } from '../config';
 
 interface JiraSettings {
   url: string;
@@ -223,7 +224,7 @@ const ResolutionAssistant: React.FC = () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90000);
     try {
-      const resp = await fetch('http://localhost:8000/api/resolution-assistant', {
+      const resp = await fetch(`${API_BASE_URL}/api/resolution-assistant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticketKey: key, jiraSettings: settings }),
@@ -240,7 +241,7 @@ const ResolutionAssistant: React.FC = () => {
         const newKeys = allKeys.filter((k: string) => !confluenceLookedUp.current.has(k));
         if (newKeys.length > 0) {
           newKeys.forEach((k: string) => confluenceLookedUp.current.add(k));
-          fetch('http://localhost:8000/api/batch-confluence-links', {
+          fetch(`${API_BASE_URL}/api/batch-confluence-links`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ticketKeys: newKeys.slice(0, 50), jiraSettings: settings }),
@@ -281,7 +282,7 @@ const ResolutionAssistant: React.FC = () => {
         // fallback to backend defaults
       }
 
-      const response = await fetch(`http://localhost:8000/api/duplicate-candidates?${params.toString()}`);
+      const response = await fetch(`${API_BASE_URL}/api/duplicate-candidates?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.detail || `Duplicate discovery failed (${response.status})`);
@@ -310,7 +311,7 @@ const ResolutionAssistant: React.FC = () => {
 
     setConfluenceLinksLoading(true);
     try {
-      const resp = await fetch('http://localhost:8000/api/batch-confluence-links', {
+      const resp = await fetch(`${API_BASE_URL}/api/batch-confluence-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticketKeys: batch, jiraSettings: settings }),

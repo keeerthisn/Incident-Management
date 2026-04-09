@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { Refresh, TableChart, TrendingUp, TrendingDown, PlayArrow } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface Ticket {
@@ -138,7 +139,7 @@ const Analytics: React.FC = () => {
     }
 
     const query = params.toString();
-    const url = query ? `http://localhost:8000/api/tickets?${query}` : 'http://localhost:8000/api/tickets';
+    const url = query ? `${API_BASE_URL}/api/tickets?${query}` : `${API_BASE_URL}/api/tickets`;
 
     fetch(url)
       .then(r => r.json())
@@ -149,7 +150,7 @@ const Analytics: React.FC = () => {
 
   const runAnalysis = () => {
     setAnalyzing(true);
-    fetch('http://localhost:8000/api/analyze-tickets', { method: 'POST' })
+    fetch(`${API_BASE_URL}/api/analyze-tickets`, { method: 'POST' })
       .then(r => r.json())
       .then(() => load())
       .catch(() => {})
@@ -168,7 +169,7 @@ const Analytics: React.FC = () => {
       navigate('/settings');
       return;
     }
-    fetch('http://localhost:8000/api/fetch-tickets', {
+    fetch(`${API_BASE_URL}/api/fetch-tickets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jiraSettings }),
@@ -179,7 +180,7 @@ const Analytics: React.FC = () => {
         const poll = (count: number) => {
           if (count > 120) { setSyncing(false); return; }
           setTimeout(() => {
-            fetch('http://localhost:8000/api/fetch-status')
+            fetch(`${API_BASE_URL}/api/fetch-status`)
               .then(r => r.json())
               .then(status => {
                 if (status.done) { load(); setSyncing(false); }

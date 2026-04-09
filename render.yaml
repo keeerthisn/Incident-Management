@@ -16,9 +16,9 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
 
-  # ── Frontend (React Static Site) ──
-  - type: static
-    name: incident-tracker
+# ── Frontend (React Static Site) ──
+staticSites:
+  - name: incident-tracker
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: build

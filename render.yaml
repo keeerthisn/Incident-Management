@@ -15,16 +15,11 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
-    disk:
-      name: sqlite-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
 
   # ── Frontend (React Static Site) ──
   - type: web
     name: incident-tracker
     runtime: static
-    region: oregon
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build

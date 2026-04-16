@@ -285,7 +285,7 @@ const Settings: React.FC = () => {
                   )}
                 </Grid>
                 
-                <Grid item xs={12} md={4}>
+                <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
                     label="Fetch Last N Days"
@@ -293,11 +293,11 @@ const Settings: React.FC = () => {
                     inputProps={{ min: 1, max: 3650 }}
                     value={jiraSettings.daysBack}
                     onChange={(e) => setJiraSettings({ ...jiraSettings, daysBack: parseInt(e.target.value) || 30 })}
-                    helperText="Tickets updated in the last N days (default: 30)"
+                    helperText="All tickets created in the last N days will be fetched (default: 30)"
                   />
                 </Grid>
                 
-                <Grid item xs={12} md={4}>
+                <Grid item xs={12} md={6}>
                   <Button
                     variant="outlined"
                     startIcon={connectionStatus === 'testing' ? <CircularProgress size={20} /> : <Science />}

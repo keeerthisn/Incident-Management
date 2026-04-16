@@ -1703,12 +1703,28 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         # Always fetch the full daysBack window so local DB exactly
         # mirrors what Jira returns for the same query.  No incremental
         # mode — it caused stale tickets to accumulate and counts to drift.
+        date_filter = f'created >= -{days_back}d'
+        
         if getattr(settings, 'jql', None):
-            jql = settings.jql  # type: ignore[assignment]
+            base_jql = settings.jql.strip()  # type: ignore[assignment]
+            # Remove any ORDER BY clause from custom JQL to add date filter properly
+            order_by_pattern = r'\s+ORDER\s+BY\s+.+$'
+            import re
+            base_jql_no_order = re.sub(order_by_pattern, '', base_jql, flags=re.IGNORECASE).strip()
+            
+            # If custom JQL doesn't already have a date filter, add it
+            if 'updated >=' not in base_jql_no_order.lower() and 'created >=' not in base_jql_no_order.lower():
+                jql = f'{base_jql_no_order} AND {date_filter} ORDER BY created DESC'
+            else:
+                # Custom JQL has date filter, just add ORDER BY if not present
+                if 'order by' not in base_jql.lower():
+                    jql = f'{base_jql} ORDER BY created DESC'
+                else:
+                    jql = base_jql
         else:
             jql = (
                 f'project = {settings.projectKey} '
-                f'AND created >= -{days_back}d '
+                f'AND {date_filter} '
                 f'ORDER BY created DESC'
             )
         print(f"[fetch] FULL mode — fetching last {days_back} days, JQL: {jql}")
@@ -1754,16 +1770,8 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         all_issues: list[dict[str, Any]] = []
         seen_issue_keys: set[str] = set()
         page_size = 100   # Jira Cloud hard cap per request
-        # Safety cap is configurable; set JIRA_MAX_FETCH_ISSUES=0 for unlimited.
-        # Default is high enough to avoid undercounting larger 180-day windows.
-        max_fetch_issues_env = os.getenv("JIRA_MAX_FETCH_ISSUES", "10000")
-        try:
-            max_fetch_issues = int(max_fetch_issues_env)
-        except ValueError:
-            max_fetch_issues = 10000
-        if max_fetch_issues < 0:
-            max_fetch_issues = 10000
-        max_fetch_issues_limit: Optional[int] = max_fetch_issues if max_fetch_issues > 0 else None
+        # Fetch all tickets within the date range - no artificial limit
+        print(f"[fetch] Fetching all tickets within the last {days_back} days")
         start_at = 0
         # Explicitly name required fields — /search/jql ignores *all* for custom fields
         base_fields = ["summary", "status", "priority", "assignee", "created",
@@ -1773,6 +1781,7 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         FIELDS = ",".join(base_fields)
         next_page_token: Optional[str] = None
         page_num = 0
+        total_reported = 0  # Capture from first page only
 
         while True:
             page_num += 1
@@ -1805,7 +1814,9 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
 
             data = response.json()
             issues = data.get("issues", []) or []
-            total_reported = data.get("total", 0)
+            # Capture total only from the first page - subsequent pages may have stale/incorrect totals
+            if page_num == 1:
+                total_reported = data.get("total", 0)
             is_last = data.get("isLast", None)
             next_page_token = data.get("nextPageToken") or None
 
@@ -1813,27 +1824,30 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                   f"isLast={is_last}, nextPageToken={'yes' if next_page_token else 'no'}, "
                   f"accumulated={len(all_issues)}")
 
-            # Update live progress for the status endpoint
-            _fetch_status["pages_fetched"] = page_num
-            _fetch_status["tickets_so_far"] = len(all_issues)
-
             if not issues:
                 break
 
             new_in_page = 0
+            duplicates_in_page = 0
             for issue in issues:
                 issue_key = str(issue.get("key") or "").strip()
-                if not issue_key or issue_key in seen_issue_keys:
+                if not issue_key:
+                    continue
+                if issue_key in seen_issue_keys:
+                    duplicates_in_page += 1
                     continue
                 seen_issue_keys.add(issue_key)
                 all_issues.append(issue)
                 new_in_page += 1
-                if max_fetch_issues_limit is not None and len(all_issues) >= max_fetch_issues_limit:
-                    break
-            if max_fetch_issues_limit is not None and len(all_issues) >= max_fetch_issues_limit:
-                print(f"[fetch] reached safety cap of {max_fetch_issues_limit} issues")
-                break
+            
+            if duplicates_in_page > 0:
+                print(f"[fetch] page {page_num}: skipped {duplicates_in_page} duplicate(s), added {new_in_page} new")
+            
             start_at += len(issues)
+
+            # Update live progress for the status endpoint (after adding issues)
+            _fetch_status["pages_fetched"] = page_num
+            _fetch_status["tickets_so_far"] = len(all_issues)
 
             # Stop conditions (checked in priority order)
             if is_last is True:
@@ -2216,16 +2230,26 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
 
         elapsed = round(_t.monotonic() - fetch_start, 1)
         fetched_count = len(tickets)
+        
+        # Clear reporting of any mismatches
+        if total_reported > 0 and fetched_count != total_reported:
+            print(f"[fetch] WARNING: Mismatch detected!")
+            print(f"  - Jira reported total: {total_reported}")
+            print(f"  - Actually fetched: {fetched_count}")
+            print(f"  - Difference: {total_reported - fetched_count}")
+            print(f"  - JQL used: {jql}")
+        
         print(f"[fetch] complete: {fetched_count} from Jira, {total_in_db} in DB, "
               f"Jira reported total={total_reported}, took {elapsed}s")
         
         return {
             "status": "success",
-            "message": f"Fetched {fetched_count} tickets from Jira. {total_in_db} total in database.",
+            "message": f"Fetched {fetched_count} tickets from Jira{' (Jira reported ' + str(total_reported) + ')' if total_reported != fetched_count else ''}. {total_in_db} total in database.",
             "count": total_in_db,
             "jira_total": total_reported,
             "fetched": fetched_count,
             "elapsed_seconds": elapsed,
+            "jql_used": jql,  # Include the actual JQL for debugging
             "tickets": [],  # omit full payload; frontend reads from /api/tickets
         }
         

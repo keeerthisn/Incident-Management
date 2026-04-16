@@ -6,7 +6,7 @@ import {
 import { Refresh, TableChart, TrendingUp, TrendingDown, PlayArrow } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar as RechartsBar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface Ticket {
   key: string;
@@ -19,6 +19,7 @@ interface Ticket {
   jira_components: string | null;
   product_name: string | null;
   issue_type: string | null;
+  created: string;
 }
 
 interface JiraSettings {
@@ -130,9 +131,7 @@ const Analytics: React.FC = () => {
       if (raw) {
         const settings = JSON.parse(raw) as JiraSettings;
         if (settings.projectKey) params.set('projectKey', settings.projectKey);
-        if (settings.daysBack && Number.isFinite(settings.daysBack)) {
-          params.set('daysBack', String(settings.daysBack));
-        }
+        // Don't apply daysBack filter for Analytics - show all tickets
       }
     } catch {
       // keep default unfiltered endpoint
@@ -345,6 +344,35 @@ const Analytics: React.FC = () => {
     : 0;
   const avgSeverityLabel = avgSeverity >= 0.8 ? 'Critical' : avgSeverity >= 0.6 ? 'High' : avgSeverity >= 0.4 ? 'Medium' : 'Low';
 
+  // Trend Analysis: tickets created by year and month
+  const now = new Date();
+  
+  // Group tickets by year-month
+  const monthlyGroups: Record<string, number> = {};
+  tickets.forEach(t => {
+    if (!t.created) return;
+    const created = new Date(t.created);
+    const yearMonth = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
+    monthlyGroups[yearMonth] = (monthlyGroups[yearMonth] || 0) + 1;
+  });
+
+  // Sort by year-month and create display data
+  const sortedMonths = Object.keys(monthlyGroups).sort();
+  const trendData = sortedMonths.map(yearMonth => {
+    const [year, month] = yearMonth.split('-');
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthName = monthNames[parseInt(month) - 1];
+    const displayName = `${monthName} ${year}`;
+    return {
+      name: displayName,
+      count: monthlyGroups[yearMonth],
+      sortKey: yearMonth
+    };
+  });
+
+  // Calculate total tickets with valid created dates for data availability message
+  const ticketsWithDates = tickets.filter(t => t.created).length;
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
@@ -375,6 +403,71 @@ const Analytics: React.FC = () => {
               <StatTile label="Avg Severity" value={scored.length > 0 ? avgSeverityLabel : '--'} color={SEVERITY_COLORS[avgSeverityLabel] || '#9e9e9e'} />
             </Grid>
           </Grid>
+        </CardContent>
+      </Card>
+
+      {/* Trend Analysis Chart */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TrendingUp sx={{ color: '#5B2D91' }} />
+            Monthly Ticket Creation Trends
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            NCIPs created per month
+          </Typography>
+          {ticketsWithDates === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>No tickets with creation dates available.</Typography>
+          ) : (
+            <>
+              <Box sx={{ width: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
+                <Box sx={{ minWidth: Math.max(600, trendData.length * 80) }}>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={trendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <XAxis 
+                        dataKey="name" 
+                        tick={{ fill: '#666', fontSize: 11 }}
+                        axisLine={{ stroke: '#e0e0e0' }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={70}
+                      />
+                      <YAxis 
+                        tick={{ fill: '#666', fontSize: 12 }}
+                        axisLine={{ stroke: '#e0e0e0' }}
+                        label={{ value: 'Number of Tickets', angle: -90, position: 'insideLeft', style: { fill: '#666', fontSize: 12 } }}
+                      />
+                      <RechartsTooltip 
+                        content={({ active, payload }: any) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <Box sx={{ bgcolor: '#fff', border: '1px solid #e0e0e0', borderRadius: 1, px: 1.5, py: 0.8, boxShadow: 1 }}>
+                                <Typography variant="body2" fontWeight={600}>{payload[0].payload.name}</Typography>
+                                <Typography variant="body2" color="text.secondary">{payload[0].value} tickets</Typography>
+                              </Box>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <RechartsBar 
+                        dataKey="count" 
+                        fill="#7C3AED" 
+                        radius={[8, 8, 0, 0]}
+                        label={{ position: 'top', fill: '#5B2D91', fontWeight: 600, fontSize: 11 }}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Box>
+              {trendData.length === 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center', fontStyle: 'italic' }}>
+                  💡 Tip: To see historical trends, adjust "Fetch Last N Days" in Settings to load older tickets
+                </Typography>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

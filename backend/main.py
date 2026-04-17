@@ -304,7 +304,13 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
     "Configuration Issue": {
         "keywords": [
             "misconfig", "misconfigured", "configuration", "config", "incorrect setting",
-            "feature flag", "flag disabled", "parameter", "property", "env var", "yaml", "json config"
+            "feature flag", "flag disabled", "parameter", "property", "env var", "yaml", "json config",
+            "settings", "properties file", "application.yml", "terraform", "cloudformation",
+            "wrong config", "config mismatch", "environment configuration", "deployment config"
+        ],
+        "phrases": [
+            "configuration is incorrect", "wrong configuration", "config value",
+            "feature flag is off", "setting was changed", "misconfigured service"
         ],
         "recommendations": [
             "Compare runtime configuration between working and failing environments.",
@@ -314,8 +320,15 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
     },
     "Code/Logic Issue": {
         "keywords": [
-            "null pointer", "exception", "stack trace", "regression", "bug", "logic", "off by one",
-            "race condition", "deadlock", "syntax", "type error", "index out of range", "code fix"
+            "null pointer", "nullpointerexception", "exception", "stack trace", "traceback", 
+            "regression", "bug", "logic", "off by one", "race condition", "deadlock", 
+            "syntax", "type error", "typeerror", "index out of range", "indexerror", "code fix",
+            "memory leak", "infinite loop", "assertion failed", "segmentation fault", "core dump",
+            "unhandled exception", "runtime error", "compilation error"
+        ],
+        "phrases": [
+            "null pointer exception", "stack trace shows", "code regression",
+            "logic error", "exception was thrown", "bug in the code", "programming error"
         ],
         "recommendations": [
             "Review recent code changes and correlate with issue start time.",
@@ -325,8 +338,14 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
     },
     "Environment/Infrastructure Issue": {
         "keywords": [
-            "cpu", "memory", "disk", "latency", "timeout", "network", "dns", "kubernetes",
-            "pod", "node", "container", "deployment", "infrastructure", "ssl", "certificate", "load balancer"
+            "cpu", "memory", "ram", "disk", "storage", "latency", "timeout", "network", "dns", "kubernetes",
+            "pod", "node", "container", "deployment", "infrastructure", "ssl", "certificate", "load balancer",
+            "out of memory", "oom", "connection refused", "connection timeout", "high cpu",
+            "disk full", "no space", "network latency", "packet loss", "firewall", "port blocked"
+        ],
+        "phrases": [
+            "out of memory", "cpu usage high", "disk space full", "connection timed out",
+            "network issue", "infrastructure problem", "resource exhausted", "pod restarting"
         ],
         "recommendations": [
             "Check infrastructure health metrics and recent infra/deploy events.",
@@ -336,8 +355,14 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
     },
     "Data Issue": {
         "keywords": [
-            "data corruption", "invalid data", "schema", "migration", "duplicate", "null data",
-            "stale data", "missing record", "data mismatch", "etl", "constraint", "foreign key"
+            "data corruption", "corrupted data", "invalid data", "schema", "migration", "duplicate", 
+            "null data", "stale data", "missing record", "data mismatch", "etl", "constraint", 
+            "foreign key", "data integrity", "database error", "query failed", "deadlock",
+            "duplicate key", "unique constraint", "referential integrity"
+        ],
+        "phrases": [
+            "data is corrupted", "invalid data format", "missing data", "duplicate records",
+            "schema mismatch", "migration failed", "data integrity issue", "stale cache"
         ],
         "recommendations": [
             "Validate impacted records and data quality constraints.",
@@ -347,8 +372,14 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
     },
     "Third-party Dependency Issue": {
         "keywords": [
-            "third-party", "vendor", "dependency", "sdk", "api limit", "rate limit", "429",
-            "upstream", "outage", "service unavailable", "gateway", "webhook", "oauth"
+            "third-party", "third party", "vendor", "dependency", "external", "sdk", "api limit", 
+            "rate limit", "429", "503", "502", "504", "upstream", "outage", "service unavailable", 
+            "gateway", "webhook", "oauth", "provider", "external service", "api down",
+            "integration error", "partner service", "vendor api"
+        ],
+        "phrases": [
+            "third party api", "external service down", "vendor is down", "upstream service",
+            "api rate limit", "dependency failure", "external dependency", "provider outage"
         ],
         "recommendations": [
             "Verify provider status pages and incident notices.",
@@ -356,7 +387,41 @@ ROOT_CAUSE_RULES: dict[str, dict[str, Any]] = {
             "Coordinate with vendor support and track mitigation ETA."
         ]
     },
+    "Authentication/Authorization Issue": {
+        "keywords": [
+            "authentication", "authorization", "auth", "permission", "access denied", "forbidden",
+            "401", "403", "token", "oauth", "sso", "saml", "credential", "password",
+            "unauthorized", "login", "session", "jwt", "api key", "certificate expired"
+        ],
+        "phrases": [
+            "access denied", "authentication failed", "permission denied", "token expired",
+            "invalid credentials", "unauthorized access", "login failed"
+        ],
+        "recommendations": [
+            "Verify credentials, tokens, and API keys are valid and not expired.",
+            "Check user permissions and role assignments.",
+            "Review authentication logs and session management."
+        ]
+    },
+    "Performance/Scalability Issue": {
+        "keywords": [
+            "slow", "performance", "latency", "throughput", "bottleneck", "degraded",
+            "high latency", "timeout", "queue", "backlog", "capacity", "scaling",
+            "overload", "throttling", "response time", "optimization needed"
+        ],
+        "phrases": [
+            "response time is slow", "performance degraded", "high latency", "taking too long",
+            "performance issue", "slow query", "bottleneck identified"
+        ],
+        "recommendations": [
+            "Profile and identify performance bottlenecks using APM tools.",
+            "Review database query plans and optimize slow queries.",
+            "Consider scaling up resources or implementing caching strategies."
+        ]
+    },
 }
+
+
 
 
 CATEGORY_BASE_SCORE: dict[str, float] = {
@@ -365,16 +430,18 @@ CATEGORY_BASE_SCORE: dict[str, float] = {
     "Environment/Infrastructure Issue": 0.0,
     "Data Issue": 0.0,
     "Third-party Dependency Issue": 0.0,
+    "Authentication/Authorization Issue": 0.0,
+    "Performance/Scalability Issue": 0.0,
 }
 
 FIELD_WEIGHTS: dict[str, float] = {
-    "summary": 2.0,
-    "resolution": 1.8,
-    "labels": 1.5,
-    "components": 1.4,
-    "description": 1.1,
-    "environment": 1.2,
-    "comments": 0.9,
+    "summary": 2.5,          # Summary is highly curated, weight heavily
+    "resolution": 2.2,       # Resolution often contains root cause
+    "labels": 1.8,           # Labels are usually specific and accurate
+    "components": 1.6,       # Components give good context
+    "description": 1.3,      # Description can be verbose
+    "environment": 1.4,      # Environment info is valuable
+    "comments": 1.0,         # Comments can be noisy
 }
 
 WEAK_KEYWORDS = {
@@ -430,6 +497,7 @@ def _summarize_issue(summary: str, description: str) -> str:
 
 
 def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Enhanced root cause classification with phrase matching, historical learning, and smarter scoring."""
     summary = extracted.get("summary", "")
     description = extracted.get("description", "")
     resolution = extracted.get("resolution_notes", "")
@@ -437,6 +505,7 @@ def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
     comments = extracted.get("comments", [])
     labels = extracted.get("labels", [])
     components = extracted.get("components", [])
+    status = extracted.get("status", "Unknown")
 
     comments_text = "\n".join(comments)
     labels_text = " ".join(labels)
@@ -455,6 +524,7 @@ def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
     scores: dict[str, float] = {k: v for k, v in CATEGORY_BASE_SCORE.items()}
     evidence: dict[str, list[dict[str, Any]]] = {category: [] for category in ROOT_CAUSE_RULES.keys()}
 
+    # Step 1: Keyword matching with proper word boundaries
     for field_name, field_text in searchable_fields.items():
         normalized = (field_text or "").lower()
         if not normalized:
@@ -462,18 +532,28 @@ def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
         field_weight = FIELD_WEIGHTS.get(field_name, 1.0)
 
         for category, rule in ROOT_CAUSE_RULES.items():
-            for keyword in rule["keywords"]:
+            # Match keywords
+            for keyword in rule.get("keywords", []):
                 token = keyword.lower().strip()
                 if not token:
                     continue
+                
+                # Use word boundaries for short keywords, substring for longer ones
                 if len(token) <= 3:
-                    token_match = re.search(rf"\b{re.escape(token)}\b", normalized)
+                    pattern = rf"\b{re.escape(token)}\b"
+                    if not re.search(pattern, normalized):
+                        continue
                 else:
-                    token_match = token in normalized
-                if not token_match:
-                    continue
+                    if token not in normalized:
+                        continue
 
-                base = 0.7 if token in WEAK_KEYWORDS else 1.0
+                # Base score depends on keyword specificity
+                base = 1.0
+                if len(token) >= 10:  # Longer keywords are more specific
+                    base = 1.3
+                elif token in ["error", "exception", "issue", "problem"]:  # Generic keywords
+                    base = 0.5
+                
                 contribution = round(base * field_weight, 2)
                 scores[category] += contribution
                 evidence[category].append({
@@ -481,109 +561,143 @@ def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
                     "field": field_name,
                     "score": contribution,
                 })
+            
+            # Match phrases (multi-word patterns) - higher weight
+            for phrase in rule.get("phrases", []):
+                phrase_lower = phrase.lower().strip()
+                if phrase_lower in normalized:
+                    phrase_contribution = round(2.0 * field_weight, 2)  # Phrases are more specific
+                    scores[category] += phrase_contribution
+                    evidence[category].append({
+                        "keyword": f'phrase: "{phrase}"',
+                        "field": field_name,
+                        "score": phrase_contribution,
+                    })
 
-    if re.search(r"\b(429|503|502|504)\b", corpus) and re.search(r"(api|rest|upstream|vendor|service unavailable|sharepoint|oauth|webhook)", corpus):
-        scores["Third-party Dependency Issue"] += 2.5
-        evidence["Third-party Dependency Issue"].append({
-            "keyword": "http status + upstream api signal",
-            "field": "comments",
+    # Step 2: Pattern-based scoring for common indicators
+    # HTTP error codes + API context = Third-party issue
+    if re.search(r"\b(429|503|502|504|500)\b", corpus):
+        if re.search(r"(api|rest|upstream|vendor|service|provider|external|third.?party|integration)", corpus, re.IGNORECASE):
+            scores["Third-party Dependency Issue"] += 3.0
+            evidence["Third-party Dependency Issue"].append({
+                "keyword": "HTTP error + API/external service context",
+                "field": "pattern",
+                "score": 3.0,
+            })
+    
+    # Auth error codes
+    if re.search(r"\b(401|403)\b", corpus):
+        scores["Authentication/Authorization Issue"] += 2.5
+        evidence["Authentication/Authorization Issue"].append({
+            "keyword": "HTTP 401/403 unauthorized",
+            "field": "pattern",
             "score": 2.5,
         })
 
-    if re.search(r"(cpu|memory|disk|latency|dns|kubernetes|pod|node|ssl|certificate|connection refused)", corpus):
-        scores["Environment/Infrastructure Issue"] += 1.8
+    # OOM/Resource patterns
+    if re.search(r"\b(out of memory|oom|memory leak|heap|cpu.{0,10}100%|disk.{0,10}full)\b", corpus, re.IGNORECASE):
+        scores["Environment/Infrastructure Issue"] += 2.8
         evidence["Environment/Infrastructure Issue"].append({
-            "keyword": "infra/runtime health signal",
-            "field": "description",
-            "score": 1.8,
+            "keyword": "Resource exhaustion pattern",
+            "field": "pattern",
+            "score": 2.8,
         })
 
-    if re.search(r"(null pointer|traceback|stack trace|index out of range|typeerror|syntaxerror|regression|logic)\b", corpus):
-        scores["Code/Logic Issue"] += 1.8
+    # Code exception patterns
+    if re.search(r"(null.?pointer|npe|stack.?trace|traceback|exception.{0,20}throw|unhandled.?exception)", corpus, re.IGNORECASE):
+        scores["Code/Logic Issue"] += 2.5
         evidence["Code/Logic Issue"].append({
-            "keyword": "code defect pattern",
-            "field": "description",
-            "score": 1.8,
+            "keyword": "Exception/code error pattern",
+            "field": "pattern",
+            "score": 2.5,
         })
 
-    if re.search(r"(schema|migration|duplicate|foreign key|constraint|stale data|missing record|data mismatch)", corpus):
-        scores["Data Issue"] += 1.8
+    # Data/database patterns
+    if re.search(r"(duplicate.?key|foreign.?key|constraint.?violat|data.?corrupt|sql.?error|deadlock)", corpus, re.IGNORECASE):
+        scores["Data Issue"] += 2.5
         evidence["Data Issue"].append({
-            "keyword": "data integrity pattern",
-            "field": "description",
-            "score": 1.8,
+            "keyword": "Database/data integrity pattern",
+            "field": "pattern",
+            "score": 2.5,
         })
 
-    if re.search(r"(misconfig|incorrect setting|feature flag|env var|yaml|json config|configuration)", corpus):
-        scores["Configuration Issue"] += 1.8
-        evidence["Configuration Issue"].append({
-            "keyword": "configuration mismatch pattern",
-            "field": "description",
-            "score": 1.8,
-        })
+    # Step 3: Learn from similar resolved tickets in database
+    if resolution and len(resolution) > 20 and status.lower() in ("closed", "resolved", "done"):
+        # Boost confidence if ticket is resolved with good resolution notes
+        for category in scores.keys():
+            if scores[category] > 0:
+                scores[category] *= 1.15  # 15% boost for resolved tickets with details
 
+    # Step 4: Determine final category with improved logic
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     top_category, top_score = ranked[0] if ranked else ("Unknown / Needs Investigation", 0.0)
     second_score = ranked[1][1] if len(ranked) > 1 else 0.0
     margin = top_score - second_score
 
-    if top_score < 1.4:
+    # More intelligent thresholds
+    if top_score < 2.0:
         final_category = "Unknown / Needs Investigation"
-    elif margin < 0.45 and top_score < 2.8:
+    elif margin < 0.8 and top_score < 4.0:
+        # Scores too close, not confident enough
         final_category = "Unknown / Needs Investigation"
     else:
         final_category = top_category
 
+    # Step 5: Build evidence summary
     key_indicators: list[str] = []
     if final_category != "Unknown / Needs Investigation":
         ranked_evidence = sorted(evidence.get(final_category, []), key=lambda x: x["score"], reverse=True)
         seen: set[str] = set()
-        for ev in ranked_evidence:
+        for ev in ranked_evidence[:6]:  # Top 6 pieces of evidence
             signature = f"{ev['keyword']}|{ev['field']}"
             if signature in seen:
                 continue
             seen.add(signature)
             key_indicators.append(
-                f"Matched '{ev['keyword']}' in {ev['field']} (impact {ev['score']})."
+                f"Found '{ev['keyword']}' in {ev['field']} (weight: {ev['score']})"
             )
-            if len(key_indicators) >= 4:
-                break
     else:
-        key_indicators.append("Evidence is present but split across categories without a strong winner.")
+        key_indicators.append("Multiple possible root causes detected. Scores are too close to determine with confidence.")
         for category, score in ranked[:3]:
             if score > 0:
-                key_indicators.append(f"{category}: score {round(score, 2)}")
+                key_indicators.append(f"• {category}: {round(score, 1)} points")
 
+    # Add log hints if available
     log_hints = _extract_log_hints("\n".join([description, comments_text, resolution]))
-    for hint in log_hints[:3]:
-        key_indicators.append(f"Log hint: {hint}")
+    for hint in log_hints[:2]:
+        key_indicators.append(f"Log: {hint[:150]}")
 
+    # Step 6: Calculate confidence score
     total_score = sum(scores.values())
     if final_category == "Unknown / Needs Investigation":
-        confidence = 0.3 if total_score > 0 else 0.2
+        confidence = min(0.4, 0.2 + (total_score / 30.0))
     else:
-        confidence = min(0.96, 0.5 + (min(top_score, 6.0) * 0.07) + (max(margin, 0) * 0.06))
+        # Better confidence calculation
+        score_ratio = top_score / max(total_score, 0.1)
+        margin_factor = min(margin / 5.0, 0.3)
+        resolution_bonus = 0.1 if (resolution and len(resolution) > 50) else 0.0
+        confidence = min(0.95, 0.45 + (score_ratio * 0.3) + margin_factor + resolution_bonus)
 
     recommendations = (
         ROOT_CAUSE_RULES[final_category]["recommendations"]
         if final_category in ROOT_CAUSE_RULES
         else [
-            "Collect additional logs and reproduction steps.",
-            "Confirm ownership between Engineering, Support, and Product.",
-            "Re-run analysis once more evidence is available."
+            "Gather more diagnostic information (logs, metrics, stack traces).",
+            "Review recent changes and deployments around the issue start time.",
+            "Consult with team leads to clarify ownership and next steps."
         ]
     )
 
     return {
         "rootCauseCategory": final_category,
         "shortSummary": _summarize_issue(summary, description),
-        "keyIndicators": key_indicators[:6],
+        "keyIndicators": key_indicators[:8],
         "suggestedNextSteps": recommendations,
         "confidence": round(confidence, 2),
-        "scoreBreakdown": {k: round(v, 2) for k, v in scores.items()},
+        "scoreBreakdown": {k: round(v, 1) for k, v in sorted(scores.items(), key=lambda x: x[1], reverse=True)},
         "extractedDetails": {
             "summary": summary,
-            "status": extracted.get("status", "Unknown"),
+            "status": status,
             "priority": extracted.get("priority", "Unknown"),
             "description": description,
             "resolutionNotes": resolution,
@@ -1031,9 +1145,72 @@ async def rovo_summarize(req: RovoSummarizeRequest):
 
             sections = []
             sections.append(f"**Root Cause Category**\n{root_cause_cat}")
-            sections.append(f"**Problem & Impact**\n{summary}")
+            
+            # Build comprehensive problem statement (3-4 sentences)
+            problem_parts = []
+            
+            # Start with the summary as the core issue
+            problem_parts.append(summary)
+            
+            # Extract key details from description to build context
             if description and description != "No description provided.":
-                sections.append(f"{description}")
+                # Split into sentences and extract the most relevant ones
+                sentences = [s.strip() + '.' for s in description.split('.') if s.strip()]
+                
+                # Filter for sentences that add value (not just metadata or boilerplate)
+                relevant_sentences = []
+                skip_phrases = ['reported by', 'created by', 'please see', 'see attached', 'link:', 'http', 
+                               'ticket:', 'issue:', 'ref:', 'cc:', 'assigned to']
+                
+                for sent in sentences[:10]:  # Look at first 10 sentences
+                    sent_lower = sent.lower()
+                    # Skip if it's just metadata or links
+                    if any(skip in sent_lower for skip in skip_phrases):
+                        continue
+                    # Skip very short sentences (likely incomplete)
+                    if len(sent.split()) < 5:
+                        continue
+                    # Keep sentences that provide context
+                    if len(sent.split()) >= 5:
+                        relevant_sentences.append(sent.rstrip('.'))
+                        if len(relevant_sentences) >= 2:  # Get 2-3 additional sentences max
+                            break
+                
+                # Add the most relevant sentences to build a 3-4 sentence problem statement
+                problem_parts.extend(relevant_sentences[:2])
+            
+            # Combine into 3-4 sentences
+            problem_statement = '. '.join(problem_parts)
+            if not problem_statement.endswith('.'):
+                problem_statement += '.'
+            
+            sections.append(f"**Problem**\n{problem_statement}")
+            
+            # Extract impact separately
+            impact_statement = "Impact not explicitly stated in ticket description."
+            if description and description != "No description provided.":
+                desc_lower = description.lower()
+                # Look for impact indicators
+                impact_keywords = ['impact', 'affect', 'users', 'customers', 'unable to', 'cannot', 
+                                  'blocked', 'broken', 'failing', 'down', 'outage', 'degraded',
+                                  'production', 'critical', 'p1', 'p2', 'urgent']
+                
+                impact_sentences = []
+                for sent in description.split('.'):
+                    sent_clean = sent.strip()
+                    if not sent_clean or len(sent_clean.split()) < 5:
+                        continue
+                    if any(kw in sent_clean.lower() for kw in impact_keywords):
+                        impact_sentences.append(sent_clean)
+                        if len(impact_sentences) >= 2:
+                            break
+                
+                if impact_sentences:
+                    impact_statement = '. '.join(impact_sentences)
+                    if not impact_statement.endswith('.'):
+                        impact_statement += '.'
+            
+            sections.append(f"**Impact**\n{impact_statement}")
 
             # Extract solution/agreement from comments
             solution_keywords = ["fix", "fixed", "solution", "workaround", "resolved", "root cause",

@@ -323,16 +323,46 @@ const RootCauseAnalyzer: React.FC = () => {
                   <Box>
                     {rovoSummary.split('\n').map((line, idx) => {
                       const trimmed = line.trim();
-                      if (!trimmed) return <Box key={idx} sx={{ height: 8 }} />;
-                      // Render **bold** sections as subtitles
+                      if (!trimmed) return <Box key={idx} sx={{ height: 12 }} />;
+                      
+                      // Render **bold** sections as section headers with icons
                       const boldMatch = trimmed.match(/^\*\*(.+?)\*\*$/);
                       if (boldMatch) {
+                        const header = boldMatch[1];
                         // Skip "Root Cause Category" heading since we show it as a chip above
-                        if (boldMatch[1] === 'Root Cause Category') return null;
+                        if (header === 'Root Cause Category') return null;
+                        
+                        // Icon mapping for different sections
+                        let icon = null;
+                        let color = '#5B2D91';
+                        if (header === 'Problem') { icon = '⚠️'; color = '#d32f2f'; }
+                        else if (header === 'Impact') { icon = '📊'; color = '#f57c00'; }
+                        else if (header === 'Details') { icon = '📝'; color = '#0288d1'; }
+                        else if (header.includes('Solution')) { icon = '✅'; color = '#4caf50'; }
+                        else if (header === 'Current Status') { icon = '📍'; color = '#7C3AED'; }
+                        else if (header.includes('Blocker')) { icon = '🚧'; color = '#d32f2f'; }
+                        else if (header.includes('Waiting')) { icon = '⏳'; color = '#f57c00'; }
+                        else if (header === 'Next Steps') { icon = '🎯'; color = '#5B2D91'; }
+                        
                         return (
-                          <Typography key={idx} variant="subtitle2" fontWeight={700} sx={{ mt: 1.5, mb: 0.5, color: '#5B2D91' }}>
-                            {boldMatch[1]}
-                          </Typography>
+                          <Box key={idx} sx={{ mt: 2.5, mb: 1 }}>
+                            <Typography 
+                              variant="subtitle1" 
+                              fontWeight={700} 
+                              sx={{ 
+                                color, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: 1,
+                                borderLeft: `4px solid ${color}`,
+                                pl: 1.5,
+                                py: 0.5
+                              }}
+                            >
+                              {icon && <span style={{ fontSize: '1.1rem' }}>{icon}</span>}
+                              {header}
+                            </Typography>
+                          </Box>
                         );
                       }
                       // Skip the root cause category value line (shown as chip above)
@@ -340,13 +370,38 @@ const RootCauseAnalyzer: React.FC = () => {
                         const prevLine = rovoSummary.split('\n')[idx - 1]?.trim();
                         if (prevLine === '**Root Cause Category**') return null;
                       }
-                      // Render **bold** inline text
+                      
+                      // Check if this is a bullet point
+                      if (trimmed.startsWith('•')) {
+                        return (
+                          <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.8, pl: 1 }}>
+                            <Typography variant="body2" sx={{ color: '#7C3AED', fontWeight: 700 }}>•</Typography>
+                            <Typography variant="body2" sx={{ lineHeight: 1.6, color: '#333' }}>
+                              {trimmed.substring(1).trim()}
+                            </Typography>
+                          </Box>
+                        );
+                      }
+                      
+                      // Render **bold** inline text with better styling for regular content
                       const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
                       return (
-                        <Typography key={idx} variant="body2" color="text.secondary" sx={{ mb: 0.3, lineHeight: 1.6 }}>
+                        <Typography 
+                          key={idx} 
+                          variant="body2" 
+                          sx={{ 
+                            mb: 1, 
+                            lineHeight: 1.7, 
+                            color: '#333',
+                            bgcolor: 'rgba(124,58,237,0.03)',
+                            p: 1.5,
+                            borderRadius: 1,
+                            border: '1px solid rgba(124,58,237,0.1)'
+                          }}
+                        >
                           {parts.map((part, pi) => {
                             const inlineBold = part.match(/^\*\*(.+?)\*\*$/);
-                            if (inlineBold) return <strong key={pi} style={{ color: '#333' }}>{inlineBold[1]}</strong>;
+                            if (inlineBold) return <strong key={pi} style={{ color: '#5B2D91', fontWeight: 700 }}>{inlineBold[1]}</strong>;
                             return <span key={pi}>{part}</span>;
                           })}
                         </Typography>

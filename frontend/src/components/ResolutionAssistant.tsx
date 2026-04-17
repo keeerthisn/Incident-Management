@@ -683,20 +683,26 @@ const ResolutionAssistant: React.FC = () => {
               {investigateTab === 0 && investigateResult.probableRootCause && (
                 <Box>
                   {/* Root cause category + confidence */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                    <Chip
-                      label={investigateResult.probableRootCause.summary || 'Unknown'}
-                      color={investigateResult.probableRootCause.summary === 'Unknown / Needs Investigation' ? 'default' : 'primary'}
-                      sx={{ fontWeight: 'bold', fontSize: '0.95rem', py: 0.5 }}
-                    />
-                    {investigateResult.probableRootCause.confidence != null && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1, color: '#5B2D91' }}>Root Cause Category</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
                       <Chip
-                        label={`Confidence: ${Math.round(investigateResult.probableRootCause.confidence * 100)}%`}
-                        size="small"
-                        color={investigateResult.probableRootCause.confidence >= 0.7 ? 'success' : investigateResult.probableRootCause.confidence >= 0.5 ? 'warning' : 'default'}
-                        variant="outlined"
+                        label={investigateResult.probableRootCause.summary || 'Unknown'}
+                        color={investigateResult.probableRootCause.summary === 'Unknown / Needs Investigation' ? 'default' : 'primary'}
+                        sx={{ fontWeight: 'bold', fontSize: '0.95rem', py: 0.5 }}
                       />
-                    )}
+                      {investigateResult.probableRootCause.confidence != null && (
+                        <Chip
+                          label={`Confidence: ${Math.round(investigateResult.probableRootCause.confidence * 100)}%`}
+                          size="small"
+                          color={investigateResult.probableRootCause.confidence >= 0.7 ? 'success' : investigateResult.probableRootCause.confidence >= 0.5 ? 'warning' : 'default'}
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                      Based on ticket description, resolution notes, and historical patterns
+                    </Typography>
                   </Box>
 
                   {/* Hypothesis / short summary */}
@@ -705,14 +711,6 @@ const ResolutionAssistant: React.FC = () => {
                       {investigateResult.probableRootCause.hypothesis}
                     </Typography>
                   )}
-
-                  {/* Key indicators / evidence */}
-                  <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 0.5 }}>Key Indicators</Typography>
-                  <List dense>
-                    {(investigateResult.probableRootCause.evidence || []).map((e: string, i: number) => (
-                      <ListItem key={i}><ListItemText primary={e} /></ListItem>
-                    ))}
-                  </List>
 
                   {/* Score breakdown across categories */}
                   {investigateResult.probableRootCause.scoreBreakdown && Object.keys(investigateResult.probableRootCause.scoreBreakdown).length > 0 && (

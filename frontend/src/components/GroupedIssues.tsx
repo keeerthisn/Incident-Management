@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import {
   Box, Typography, Card, CardContent, Chip, Collapse, IconButton,
   CircularProgress, TextField, InputAdornment, Badge, Tooltip, Link,
-  Grid, MenuItem,
+  Grid, MenuItem, Checkbox, ListItemText, OutlinedInput, Select, InputLabel, FormControl,
 } from '@mui/material';
 import {
   ExpandMore, ExpandLess, Search, Refresh,
@@ -144,6 +144,7 @@ const GroupedIssues: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [componentFilter, setComponentFilter] = useState('all');
+  const [productFilter, setProductFilter] = useState<string[]>([]);
 
   const jiraBaseUrl = (() => {
     try { return JSON.parse(localStorage.getItem('jiraSettings') || '{}').url?.replace(/\/$/, '') || ''; }
@@ -187,6 +188,7 @@ const GroupedIssues: React.FC = () => {
         const comps = (t.jira_components || '').split(',').map(c => c.trim());
         if (!comps.includes(componentFilter)) return false;
       }
+      if (productFilter.length > 0 && !productFilter.includes(t.product_name || '')) return false;
       if (q) {
         return (
           t.summary.toLowerCase().includes(q) ||
@@ -196,7 +198,7 @@ const GroupedIssues: React.FC = () => {
       }
       return true;
     });
-  }, [tickets, search, statusFilter, priorityFilter, componentFilter]);
+  }, [tickets, search, statusFilter, priorityFilter, componentFilter, productFilter]);
 
   const uniqueStatuses = useMemo(() => Array.from(new Set(tickets.map(t => t.status))).sort(), [tickets]);
   const uniquePriorities = useMemo(() =>
@@ -206,6 +208,9 @@ const GroupedIssues: React.FC = () => {
     Array.from(new Set(tickets.flatMap(t =>
       t.jira_components ? t.jira_components.split(',').map(c => c.trim()).filter(Boolean) : []
     ))).sort(),
+  [tickets]);
+  const uniqueProducts = useMemo(() =>
+    Array.from(new Set(tickets.map(t => t.product_name).filter(Boolean))).sort() as string[],
   [tickets]);
 
   // Group tickets
@@ -299,6 +304,23 @@ const GroupedIssues: React.FC = () => {
           <MenuItem value="all">All</MenuItem>
           {uniquePriorities.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
         </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Product</InputLabel>
+          <Select
+            multiple
+            value={productFilter}
+            onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput label="Product" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueProducts.map(p => (
+              <MenuItem key={p} value={p}>
+                <Checkbox checked={productFilter.indexOf(p) > -1} size="small" />
+                <ListItemText primary={p} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <TextField
           select size="small" label="Components" sx={{ minWidth: 180 }}
           value={componentFilter} onChange={e => { setComponentFilter(e.target.value); }}
@@ -306,11 +328,11 @@ const GroupedIssues: React.FC = () => {
           <MenuItem value="all">All</MenuItem>
           {uniqueComponents.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
         </TextField>
-        {(statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all') && (
+        {(statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0) && (
           <Chip
             label="Clear filters"
             size="small"
-            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); }}
+            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); }}
             sx={{ alignSelf: 'center', cursor: 'pointer', bgcolor: '#f3e5f5', color: '#5B2D91' }}
           />
         )}

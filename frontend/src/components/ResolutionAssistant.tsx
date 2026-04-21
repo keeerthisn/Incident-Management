@@ -40,6 +40,7 @@ interface DuplicateCandidate {
   summary: string;
   status: string;
   priority: string;
+  productName?: string;
   similarityConfidence: number;
   reference?: string | null;
   resolutionNotes?: string;
@@ -163,6 +164,7 @@ const ResolutionAssistant: React.FC = () => {
   const [duplicateSearch, setDuplicateSearch] = useState('');
   const [duplicatePriorityFilter, setDuplicatePriorityFilter] = useState('all');
   const [duplicateComponentFilter, setDuplicateComponentFilter] = useState('all');
+  const [duplicateProductFilter, setDuplicateProductFilter] = useState('all');
   const [duplicateMinConfidence, setDuplicateMinConfidence] = useState('all');
   const [duplicatePanelExpanded, setDuplicatePanelExpanded] = useState(false);
   const [expandedDuplicateGroups, setExpandedDuplicateGroups] = useState<Record<string, boolean>>({});
@@ -373,6 +375,16 @@ const ResolutionAssistant: React.FC = () => {
     ).sort();
   }, [duplicateCandidates]);
 
+  const duplicateProducts = useMemo(() => {
+    return Array.from(
+      new Set(
+        duplicateCandidates
+          .map((item) => item.productName)
+          .filter(Boolean),
+      ),
+    ).sort();
+  }, [duplicateCandidates]);
+
   const clusteredDuplicateCandidates = useMemo(() => {
     const items = duplicateCandidates;
     if (items.length === 0) {
@@ -515,6 +527,10 @@ const ResolutionAssistant: React.FC = () => {
             }
           }
 
+          if (duplicateProductFilter !== 'all' && item.productName !== duplicateProductFilter) {
+            return false;
+          }
+
           if (minConfidence !== null && (item.similarityConfidence || 0) < minConfidence) {
             return false;
           }
@@ -547,7 +563,7 @@ const ResolutionAssistant: React.FC = () => {
         };
       })
       .filter((cluster) => cluster.items.length > 0);
-  }, [clusteredDuplicateCandidates, duplicateComponentFilter, duplicateMinConfidence, duplicatePriorityFilter, duplicateSearch]);
+  }, [clusteredDuplicateCandidates, duplicateComponentFilter, duplicateMinConfidence, duplicatePriorityFilter, duplicateProductFilter, duplicateSearch]);
 
   useEffect(() => {
     setExpandedDuplicateGroups((previous) => {
@@ -967,6 +983,19 @@ const ResolutionAssistant: React.FC = () => {
                 <MenuItem value="all">All</MenuItem>
                 {duplicateComponents.map((component) => (
                   <MenuItem key={component} value={component}>{component}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                size="small"
+                label="Product"
+                value={duplicateProductFilter}
+                onChange={(e) => setDuplicateProductFilter(e.target.value)}
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                {duplicateProducts.map((product) => (
+                  <MenuItem key={product} value={product}>{product}</MenuItem>
                 ))}
               </TextField>
               <TextField

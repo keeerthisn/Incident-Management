@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Box, Typography, Card, CardContent, Grid,
-  CircularProgress, Button, LinearProgress,
+  CircularProgress, Button, LinearProgress, TextField, MenuItem, Chip,
+  Checkbox, ListItemText, OutlinedInput, Select, InputLabel, FormControl,
 } from '@mui/material';
 import { Refresh, TableChart, TrendingUp, TrendingDown, PlayArrow } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -111,6 +112,18 @@ const Analytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [componentFilter, setComponentFilter] = useState('all');
+  const [productFilter, setProductFilter] = useState<string[]>([]);
+
+  const normalizePriority = (p: string | undefined | null): string => {
+    if (!p) return 'Unset';
+    const norm = ['Blocker', 'Critical', 'Major', 'Moderate'].find(
+      v => v.toLowerCase() === p.toLowerCase()
+    );
+    return norm || 'Unset';
+  };
 
   let jiraBaseUrl = '';
   try {
@@ -195,6 +208,36 @@ const Analytics: React.FC = () => {
 
   useEffect(() => { load(); }, []);
 
+  // Filter logic
+  const filtered = useMemo(() => {
+    return tickets.filter(t => {
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      if (priorityFilter !== 'all' && normalizePriority(t.priority) !== priorityFilter) return false;
+      if (componentFilter !== 'all') {
+        const comps = (t.jira_components || '').split(',').map(c => c.trim());
+        if (!comps.includes(componentFilter)) return false;
+      }
+      if (productFilter.length > 0 && !productFilter.includes(t.product_name || '')) return false;
+      return true;
+    });
+  }, [tickets, statusFilter, priorityFilter, componentFilter, productFilter]);
+
+  // Unique filter values (computed from all tickets, not filtered)
+  const uniqueStatuses = useMemo(() => Array.from(new Set(tickets.map(t => t.status))).sort(), [tickets]);
+  const uniquePriorities = useMemo(() =>
+    Array.from(new Set(tickets.map(t => normalizePriority(t.priority)).filter(p => p !== 'Unset'))).sort(),
+  [tickets]);
+  const uniqueComponents = useMemo(() =>
+    Array.from(new Set(tickets.flatMap(t =>
+      t.jira_components ? t.jira_components.split(',').map(c => c.trim()).filter(Boolean) : []
+    ))).sort(),
+  [tickets]);
+  const uniqueProducts = useMemo(() =>
+    Array.from(new Set(tickets.map(t => t.product_name).filter(Boolean))).sort() as string[],
+  [tickets]);
+
+  const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0;
+
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: '#7C3AED' }} /></Box>;
 
   if (tickets.length === 0) return (
@@ -215,11 +258,11 @@ const Analytics: React.FC = () => {
     </Box>
   );
 
-  const total = tickets.length;
+  const total = filtered.length;
 
   // Priority breakdown
   const priorityCounts: Record<string, number> = {};
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     const p = t.priority || 'Unset';
     const norm = ['Blocker','Critical','Major','Moderate'].includes(p) ? p : 'Unset';
     priorityCounts[norm] = (priorityCounts[norm] || 0) + 1;
@@ -227,15 +270,15 @@ const Analytics: React.FC = () => {
 
   // Status breakdown
   const statusCounts: Record<string, number> = {};
-  tickets.forEach(t => { const s = t.status || 'Unknown'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
+  filtered.forEach(t => { const s = t.status || 'Unknown'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
 
   // Routing breakdown
   const routingCounts: Record<string, number> = {};
-  tickets.forEach(t => { if (t.routing_suggestion) { routingCounts[t.routing_suggestion] = (routingCounts[t.routing_suggestion] || 0) + 1; } });
+  filtered.forEach(t => { if (t.routing_suggestion) { routingCounts[t.routing_suggestion] = (routingCounts[t.routing_suggestion] || 0) + 1; } });
 
   // Top components
   const compCounts: Record<string, number> = {};
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     if (t.jira_components) {
       t.jira_components.split(',').forEach(c => {
         const trimmed = c.trim();
@@ -245,17 +288,17 @@ const Analytics: React.FC = () => {
   });
   const topComponents = Object.entries(compCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-  const analyzed = tickets.filter(t => t.confidence_score != null).length;
+  const analyzed = filtered.filter(t => t.confidence_score != null).length;
   const unanalyzed = total - analyzed;
   const avgConf = analyzed > 0
-    ? Math.round(tickets.filter(t => t.confidence_score != null).reduce((s, t) => s + (t.confidence_score || 0), 0) / analyzed * 100)
+    ? Math.round(filtered.filter(t => t.confidence_score != null).reduce((s, t) => s + (t.confidence_score || 0), 0) / analyzed * 100)
     : 0;
-  const highPriority = tickets.filter(t => ['Blocker','Critical'].includes(t.priority || '')).length;
+  const highPriority = filtered.filter(t => ['Blocker','Critical'].includes(t.priority || '')).length;
   const coveragePct = total > 0 ? Math.round((analyzed / total) * 100) : 0;
 
   // Severity distribution (buckets based on severity_score)
   const severityBuckets = { Critical: 0, High: 0, Medium: 0, Low: 0, Unscored: 0 };
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     if (t.severity_score == null) { severityBuckets.Unscored++; return; }
     if (t.severity_score >= 0.8) severityBuckets.Critical++;
     else if (t.severity_score >= 0.6) severityBuckets.High++;
@@ -268,7 +311,7 @@ const Analytics: React.FC = () => {
 
   // Confidence score distribution
   const confBuckets = { 'High (≥90%)': 0, 'Good (70-89%)': 0, 'Fair (50-69%)': 0, 'Low (<50%)': 0 };
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     if (t.confidence_score == null) return;
     const pct = t.confidence_score * 100;
     if (pct >= 90) confBuckets['High (≥90%)']++;
@@ -282,7 +325,7 @@ const Analytics: React.FC = () => {
 
   // Product breakdown
   const productCounts: Record<string, number> = {};
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     const p = t.product_name || 'Unassigned';
     productCounts[p] = (productCounts[p] || 0) + 1;
   });
@@ -308,7 +351,7 @@ const Analytics: React.FC = () => {
     { label: 'Error / Crash', keywords: ['error', 'crash', 'exception', '500', '503', 'failed'] },
   ];
   const incidentCategoryCounts: Record<string, number> = {};
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     const text = `${t.summary || ''} ${t.jira_components || ''}`.toLowerCase();
     let matched = false;
     for (const cat of CATEGORY_KEYWORDS) {
@@ -338,7 +381,7 @@ const Analytics: React.FC = () => {
   };
 
   // Average severity
-  const scored = tickets.filter(t => t.severity_score != null);
+  const scored = filtered.filter(t => t.severity_score != null);
   const avgSeverity = scored.length > 0
     ? (scored.reduce((s, t) => s + (t.severity_score || 0), 0) / scored.length)
     : 0;
@@ -349,7 +392,7 @@ const Analytics: React.FC = () => {
   
   // Group tickets by year-month
   const monthlyGroups: Record<string, number> = {};
-  tickets.forEach(t => {
+  filtered.forEach(t => {
     if (!t.created) return;
     const created = new Date(t.created);
     const yearMonth = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
@@ -371,16 +414,72 @@ const Analytics: React.FC = () => {
   });
 
   // Calculate total tickets with valid created dates for data availability message
-  const ticketsWithDates = tickets.filter(t => t.created).length;
+  const ticketsWithDates = filtered.filter(t => t.created).length;
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h4" fontWeight={800}>📈 Triage Analytics</Typography>
         <Button size="small" startIcon={<Refresh />} onClick={load}
           sx={{ borderRadius: 20, borderColor: '#7C3AED', color: '#7C3AED' }} variant="outlined">
           Refresh
         </Button>
+      </Box>
+
+      {/* Filters row */}
+      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+        <TextField
+          select size="small" label="Status" sx={{ minWidth: 140 }}
+          value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniqueStatuses.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+        </TextField>
+        <TextField
+          select size="small" label="Priority" sx={{ minWidth: 140 }}
+          value={priorityFilter} onChange={e => { setPriorityFilter(e.target.value); }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniquePriorities.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+        </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Product</InputLabel>
+          <Select
+            multiple
+            value={productFilter}
+            onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput label="Product" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueProducts.map(p => (
+              <MenuItem key={p} value={p}>
+                <Checkbox checked={productFilter.indexOf(p) > -1} size="small" />
+                <ListItemText primary={p} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          select size="small" label="Components" sx={{ minWidth: 180 }}
+          value={componentFilter} onChange={e => { setComponentFilter(e.target.value); }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniqueComponents.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+        </TextField>
+        {hasActiveFilters && (
+          <Chip
+            label="Clear filters"
+            size="small"
+            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); }}
+            sx={{ borderColor: '#7C3AED', color: '#7C3AED', alignSelf: 'center' }}
+            variant="outlined"
+          />
+        )}
+        {hasActiveFilters && (
+          <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
+            Showing {filtered.length} of {tickets.length} tickets
+          </Typography>
+        )}
       </Box>
 
       {/* Summary stat tiles */}

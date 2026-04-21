@@ -25,6 +25,12 @@ import {
   TextField,
   MenuItem,
   Snackbar,
+  Checkbox,
+  ListItemText,
+  OutlinedInput,
+  Select,
+  InputLabel,
+  FormControl,
 } from '@mui/material';
 import { 
   Settings as SettingsIcon, 
@@ -62,7 +68,8 @@ const TicketList: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [productFilter, setProductFilter] = useState<string>('all');
+  const [productFilter, setProductFilter] = useState<string[]>([]);
+  const [componentFilter, setComponentFilter] = useState<string>('all');
   const [showAnalyzedOnly, setShowAnalyzedOnly] = useState(false);
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [page, setPage] = useState(0);
@@ -316,10 +323,17 @@ const TicketList: React.FC = () => {
   ).sort();
   const uniqueProducts = Array.from(
     new Set(
+      tickets
+        .map(t => t.product_name)
+        .filter((p): p is string => Boolean(p))
+    )
+  ).sort();
+  const uniqueComponents = Array.from(
+    new Set(
       tickets.flatMap(t =>
         t.jira_components
           ? t.jira_components.split(',').map(c => c.trim()).filter(Boolean)
-          : t.product_name ? [t.product_name] : []
+          : []
       )
     )
   ).sort();
@@ -331,10 +345,11 @@ const TicketList: React.FC = () => {
         (priorityFilter === 'HighPriority'
           ? ['Blocker','Critical'].includes(normalizePriority(t.priority))
           : normalizePriority(t.priority) === priorityFilter)) &&
-      (productFilter === 'all' || (
+      (productFilter.length === 0 || productFilter.includes(t.product_name || '')) &&
+      (componentFilter === 'all' || (
         t.jira_components
-          ? t.jira_components.split(',').map(c => c.trim()).includes(productFilter)
-          : t.product_name === productFilter
+          ? t.jira_components.split(',').map(c => c.trim()).includes(componentFilter)
+          : false
       )) &&
       (!showAnalyzedOnly || !!t.routing_suggestion) &&
       (!showUnassignedOnly || t.assignee === 'unassigned')
@@ -423,7 +438,8 @@ const TicketList: React.FC = () => {
   const clearAllFilters = () => {
     setStatusFilter('all');
     setPriorityFilter('all');
-    setProductFilter('all');
+    setProductFilter([]);
+    setComponentFilter('all');
     setShowAnalyzedOnly(false);
     setShowUnassignedOnly(false);
   };
@@ -483,17 +499,34 @@ const TicketList: React.FC = () => {
             <MenuItem key={p} value={p}>{p}</MenuItem>
           ))}
         </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Product</InputLabel>
+          <Select
+            multiple
+            value={productFilter}
+            onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput label="Product" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueProducts.map(p => (
+              <MenuItem key={p} value={p}>
+                <Checkbox checked={productFilter.indexOf(p) > -1} size="small" />
+                <ListItemText primary={p} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
         <TextField
           select
           label="Components"
           size="small"
           sx={{ minWidth: 180 }}
-          value={productFilter}
-          onChange={(e) => setProductFilter(e.target.value)}
+          value={componentFilter}
+          onChange={(e) => setComponentFilter(e.target.value)}
         >
           <MenuItem value="all">All</MenuItem>
-          {uniqueProducts.map((p) => (
-            <MenuItem key={p} value={p}>{p}</MenuItem>
+          {uniqueComponents.map((c) => (
+            <MenuItem key={c} value={c}>{c}</MenuItem>
           ))}
         </TextField>
       </Box>
@@ -575,7 +608,7 @@ const TicketList: React.FC = () => {
               {([
                 { id: 'key',      label: 'Jira ID',    width: '9%'  },
                 { id: 'summary',  label: 'Summary',    width: '38%' },
-                { id: 'product',  label: 'Components', width: '15%' },
+                { id: 'product',  label: 'Product',    width: '15%' },
                 { id: 'status',   label: 'Status',     width: '10%' },
                 { id: 'priority', label: 'Priority',   width: '10%' },
                 { id: 'created',  label: 'Created',    width: '18%' },
@@ -654,11 +687,11 @@ const TicketList: React.FC = () => {
                   </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
                     <Typography variant="body2" noWrap>
-                      {ticket.product_name || ticket.jira_components?.split(',')[0]?.trim() || '—'}
+                      {ticket.product_name || '—'}
                     </Typography>
                     {ticket.jira_components && (
-                      <Typography variant="caption" color="textSecondary" noWrap display="block">
-                        {ticket.jira_components}
+                      <Typography variant="caption" color="textSecondary" noWrap display="block" title={ticket.jira_components}>
+                        Components: {ticket.jira_components}
                       </Typography>
                     )}
                   </TableCell>

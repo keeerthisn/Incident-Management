@@ -1912,13 +1912,19 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             "Accept": "application/json"
         }
 
-        # ── Step 1: Discover NCI Severity field ID (cached for 10 minutes) ──
+        # ── Step 1: Discover NCI Severity and Product Name field IDs (cached for 10 minutes) ──
         nci_severity_field_id: Optional[str] = None
+        product_name_field_id: Optional[str] = None
         cache_key = f"{settings.url.rstrip('/')}|{settings.projectKey}|{settings.email}"
         if JIRA_FIELD_CACHE.get("key") == cache_key and float(JIRA_FIELD_CACHE.get("expiresAt") or 0.0) > time.time():
             nci_severity_field_id = JIRA_FIELD_CACHE.get("nciSeverityFieldId")
+            product_name_field_id = JIRA_FIELD_CACHE.get("productNameFieldId")
+            product_name_field_candidates = JIRA_FIELD_CACHE.get("productNameFieldCandidates") or []
+            print(f"[field-cache] Using cached field IDs: nci_severity={nci_severity_field_id}, product_name={product_name_field_id}, candidates={len(product_name_field_candidates)}")
         else:
+            product_name_field_candidates = []
             try:
+                print(f"[field-discovery] Discovering custom fields from Jira...")
                 _jira_session.auth = auth
                 field_resp = _jira_session.get(
                     f"{settings.url.rstrip('/')}/rest/api/3/field",
@@ -1927,15 +1933,61 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 )
                 if field_resp.status_code == 200:
                     all_fields = field_resp.json()
+                    print(f"[field-discovery] Found {len(all_fields)} total fields in Jira")
+                    # Track all product-related fields for better selection
+                    product_candidates = []
+                    
                     for f in all_fields:
-                        fname = (f.get("name") or "").lower()
-                        if "nci severity" in fname or fname == "severity":
-                            nci_severity_field_id = f.get("id")
-                            break
-            except Exception:
+                        fname = (f.get("name") or "").lower().strip()
+                        field_id = f.get("id")
+                        field_name = f.get("name") or ""
+                        
+                        # NCI Severity field matching
+                        if not nci_severity_field_id and ("nci severity" in fname or "severity" in fname):
+                            nci_severity_field_id = field_id
+                            print(f"[field-discovery] ✓ Found NCI Severity field: '{field_name}' → {nci_severity_field_id}")
+                        
+                        # Product Name field matching - collect all candidates
+                        if "product" in fname and field_id.startswith("customfield"):
+                            # Prioritize exact matches
+                            priority = 0
+                            if fname == "product name":
+                                priority = 10
+                            elif fname == "productname":
+                                priority = 9
+                            elif "product name" in fname:
+                                priority = 8
+                            elif fname == "product":
+                                priority = 7
+                            elif "product" in fname:
+                                priority = 5
+                            
+                            product_candidates.append((priority, field_name, field_id))
+                    
+                    # Sort and store ALL product field candidates (will try each until one has data)
+                    if product_candidates:
+                        product_candidates.sort(reverse=True, key=lambda x: x[0])
+                        product_name_field_candidates = [fid for _, _, fid in product_candidates]
+                        _, best_name, product_name_field_id = product_candidates[0]
+                        print(f"[field-discovery] ✓ Found {len(product_candidates)} Product Name field candidates:")
+                        for priority, name, fid in product_candidates:
+                            print(f"    - '{name}' → {fid} (priority={priority})")
+                    
+                    if not product_name_field_id:
+                        print(f"[field-discovery] ⚠ WARNING: No 'Product Name' field found in Jira")
+                        print(f"[field-discovery] Available custom fields:")
+                        for f in all_fields[:30]:  # Show first 30 custom fields
+                            if f.get("id", "").startswith("customfield"):
+                                print(f"  - {f.get('name')} ({f.get('id')})")
+            except Exception as e:
+                print(f"[field-discovery] ERROR: {e}")
                 nci_severity_field_id = None
+                product_name_field_id = None
+                product_name_field_candidates = []
             JIRA_FIELD_CACHE["key"] = cache_key
             JIRA_FIELD_CACHE["nciSeverityFieldId"] = nci_severity_field_id
+            JIRA_FIELD_CACHE["productNameFieldId"] = product_name_field_id
+            JIRA_FIELD_CACHE["productNameFieldCandidates"] = product_name_field_candidates
             JIRA_FIELD_CACHE["expiresAt"] = time.time() + 600
 
         # ── Step 2: Fetch all pages of tickets ──
@@ -1955,6 +2007,10 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                        "components", "description", "labels", "resolution", "resolutiondate", "comment", "issuetype"]
         if nci_severity_field_id:
             base_fields.append(nci_severity_field_id)
+        # Add ALL product name candidate fields so we can try each one
+        for pf_id in product_name_field_candidates:
+            if pf_id not in base_fields:
+                base_fields.append(pf_id)
         FIELDS = ",".join(base_fields)
         next_page_token: Optional[str] = None
         page_num = 0
@@ -2063,9 +2119,7 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         for issue in all_issues:
             fields = issue.get("fields") or {}
 
-            # Components from Jira (used as Product name when no dedicated
-            # product field exists) and also exposed separately as
-            # jira_components.
+            # Components from Jira - stored separately as jira_components
             raw_components = fields.get("components") or []
             component_names = [
                 c.get("name")
@@ -2073,7 +2127,57 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 if isinstance(c, dict) and c.get("name")
             ]
             jira_components = ", ".join(component_names) if component_names else None
-            product_name = component_names[0] if component_names else None
+
+            # Product Name: Try ALL candidate fields until one has data
+            product_name: Optional[str] = None
+            used_product_field: Optional[str] = None
+            
+            def _extract_product_value(raw_value: Any) -> Optional[str]:
+                """Extract product name from various Jira field formats."""
+                if not raw_value:
+                    return None
+                if isinstance(raw_value, dict):
+                    return (
+                        raw_value.get("value") or 
+                        raw_value.get("name") or 
+                        raw_value.get("displayName") or
+                        raw_value.get("key")
+                    )
+                elif isinstance(raw_value, str):
+                    return raw_value.strip() if raw_value.strip() else None
+                elif isinstance(raw_value, list) and len(raw_value) > 0:
+                    first_item = raw_value[0]
+                    if isinstance(first_item, dict):
+                        return (
+                            first_item.get("value") or 
+                            first_item.get("name") or 
+                            first_item.get("displayName") or
+                            first_item.get("key")
+                        )
+                    else:
+                        return str(first_item).strip() if str(first_item).strip() else None
+                return None
+            
+            # Try each candidate field until we find one with data
+            for candidate_field_id in product_name_field_candidates:
+                product_value = fields.get(candidate_field_id)
+                extracted = _extract_product_value(product_value)
+                if extracted:
+                    product_name = extracted.strip()
+                    used_product_field = candidate_field_id
+                    break
+            
+            # Debug logging for first ticket
+            if len(tickets) == 0:
+                print(f"[product-extract] First ticket - checking {len(product_name_field_candidates)} candidate fields:")
+                for candidate_field_id in product_name_field_candidates:
+                    raw_val = fields.get(candidate_field_id)
+                    extracted = _extract_product_value(raw_val)
+                    print(f"    - {candidate_field_id}: raw={type(raw_val).__name__ if raw_val else 'None'}, extracted='{extracted}'")
+                if product_name:
+                    print(f"[product-extract] ✓ Using field {used_product_field} → '{product_name}'")
+                else:
+                    print(f"[product-extract] ⚠ No product name found in any candidate field")
 
             # Priority: try NCI Severity field (auto-discovered), then scan all
             # custom fields for known NCI values, then fall back to built-in priority.
@@ -2366,6 +2470,19 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             
             tickets.append(ticket)
         
+        # Debug: Show sample product names
+        if tickets and product_name_field_id:
+            sample_products = [t.get("product_name") for t in tickets[:10] if t.get("product_name")]
+            if sample_products:
+                print(f"[fetch] Sample product names from first 10 tickets: {sample_products}")
+            else:
+                print(f"[fetch] WARNING: Product Name field ID found ({product_name_field_id}), but no product names extracted from tickets")
+                # Debug: Show raw field value from first ticket
+                if all_issues:
+                    first_issue_fields = all_issues[0].get("fields", {})
+                    raw_product = first_issue_fields.get(product_name_field_id)
+                    print(f"[fetch] DEBUG: Raw Product Name value from first ticket: {type(raw_product).__name__} = {raw_product}")
+        
         # Batch-insert all tickets at once (much faster than per-row inserts)
         if tickets:
             cursor.executemany('''
@@ -2408,6 +2525,12 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         elapsed = round(_t.monotonic() - fetch_start, 1)
         fetched_count = len(tickets)
         
+        # Summary: Show how many tickets have product_name populated
+        product_name_count = sum(1 for t in tickets if t.get("product_name"))
+        components_count = sum(1 for t in tickets if t.get("jira_components"))
+        print(f"[fetch] Product Name: {product_name_count}/{fetched_count} tickets have product_name field populated")
+        print(f"[fetch] Components: {components_count}/{fetched_count} tickets have components")
+        
         # Clear reporting of any mismatches
         if total_reported > 0 and fetched_count != total_reported:
             print(f"[fetch] WARNING: Mismatch detected!")
@@ -2446,6 +2569,19 @@ async def get_fetch_status():
         "tickets_so_far": _fetch_status["tickets_so_far"],
         "error": _fetch_status["error"],
         "result": _fetch_status["result"],
+    }
+
+
+@app.post("/api/clear-field-cache")
+async def clear_field_cache():
+    """Clear the Jira field discovery cache to force re-discovery of custom fields like Product Name."""
+    global JIRA_FIELD_CACHE
+    JIRA_FIELD_CACHE["key"] = None
+    JIRA_FIELD_CACHE["nciSeverityFieldId"] = None
+    JIRA_FIELD_CACHE["productNameFieldId"] = None
+    JIRA_FIELD_CACHE["expiresAt"] = 0.0
+    return {
+        "message": "Field cache cleared. Next ticket fetch will rediscover Product Name and other custom fields."
     }
 
 
@@ -2547,7 +2683,7 @@ async def get_duplicate_candidates(
         cursor = conn.cursor()
 
         query = '''
-            SELECT jira_key, summary, status, priority, description, jira_components, created_date, resolution_notes, labels
+            SELECT jira_key, summary, status, priority, description, jira_components, created_date, resolution_notes, labels, product_name
             FROM tickets
         '''
         conditions: list[str] = []
@@ -2590,6 +2726,7 @@ async def get_duplicate_candidates(
             resolution_notes = str(row[7] or "").strip() if row[7] else ""
             labels_raw = str(row[8] or "") if len(row) > 8 and row[8] else ""
             labels = [l.strip() for l in labels_raw.split(',') if l and l.strip()]
+            product_name = str(row[9] or "").strip() if len(row) > 9 and row[9] else ""
 
             full_text = f"{summary} {description} {' '.join(components)}"
 
@@ -2601,6 +2738,7 @@ async def get_duplicate_candidates(
                 "description": description,
                 "components": components,
                 "labels": labels,
+                "product_name": product_name,
                 "resolution_notes": resolution_notes,
                 "token_set": _token_set(full_text),
                 "summary_tokens": _token_set(summary),
@@ -2694,6 +2832,7 @@ async def get_duplicate_candidates(
                 "summary": left["summary"],
                 "status": left["status"],
                 "priority": left["priority"],
+                "productName": left.get("product_name") or "",
                 "similarityConfidence": confidence,
                 "reference": None,
                 "resolutionNotes": left.get("resolution_notes") or "",
@@ -2710,6 +2849,7 @@ async def get_duplicate_candidates(
                 "summary": right["summary"],
                 "status": right["status"],
                 "priority": right["priority"],
+                "productName": right.get("product_name") or "",
                 "similarityConfidence": confidence,
                 "reference": None,
                 "resolutionNotes": right.get("resolution_notes") or "",

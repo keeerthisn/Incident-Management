@@ -145,10 +145,16 @@ const GroupedIssues: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [componentFilter, setComponentFilter] = useState('all');
   const [productFilter, setProductFilter] = useState<string[]>([]);
+  const [groupBy, setGroupBy] = useState<'category' | 'product'>('category');
 
   const jiraBaseUrl = (() => {
     try { return JSON.parse(localStorage.getItem('jiraSettings') || '{}').url?.replace(/\/$/, '') || ''; }
     catch { return ''; }
+  })();
+
+  const daysBack = (() => {
+    try { return JSON.parse(localStorage.getItem('jiraSettings') || '{}').daysBack || 30; }
+    catch { return 30; }
   })();
 
   const load = () => {
@@ -216,17 +222,35 @@ const GroupedIssues: React.FC = () => {
   // Group tickets
   const groups = useMemo(() => {
     const map: Record<string, Ticket[]> = {};
-    for (const t of filtered) {
-      const cat = classifyTicket(t);
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(t);
+    
+    if (groupBy === 'product') {
+      // Group by Product Name
+      for (const t of filtered) {
+        const productName = t.product_name || 'Unassigned';
+        if (!map[productName]) map[productName] = [];
+        map[productName].push(t);
+      }
+      // Sort alphabetically, but put Unassigned at the end
+      const productNames = Object.keys(map).sort((a, b) => {
+        if (a === 'Unassigned') return 1;
+        if (b === 'Unassigned') return -1;
+        return a.localeCompare(b);
+      });
+      return productNames.map(name => ({ label: name, tickets: map[name] }));
+    } else {
+      // Group by Category (default)
+      for (const t of filtered) {
+        const cat = classifyTicket(t);
+        if (!map[cat]) map[cat] = [];
+        map[cat].push(t);
+      }
+      // Sort groups: defined categories first (in order), then Other
+      const defined = CATEGORIES.map(c => c.label).filter(l => map[l]);
+      const result: { label: string; tickets: Ticket[] }[] = defined.map(l => ({ label: l, tickets: map[l] }));
+      if (map['Other']) result.push({ label: 'Other', tickets: map['Other'] });
+      return result;
     }
-    // Sort groups: defined categories first (in order), then Other
-    const defined = CATEGORIES.map(c => c.label).filter(l => map[l]);
-    const result: { label: string; tickets: Ticket[] }[] = defined.map(l => ({ label: l, tickets: map[l] }));
-    if (map['Other']) result.push({ label: 'Other', tickets: map['Other'] });
-    return result;
-  }, [filtered]);
+  }, [filtered, groupBy]);
 
   const toggleGroup = (label: string) =>
     setExpanded(e => ({ ...e, [label]: !e[label] }));
@@ -239,8 +263,19 @@ const GroupedIssues: React.FC = () => {
 
   const collapseAll = () => setExpanded({});
 
-  const getCatMeta = (label: string) =>
-    CATEGORIES.find(c => c.label === label) || { color: '#607d8b', bg: '#eceff1', label: 'Other', keywords: [] };
+  // Product colors for when grouping by product
+  const PRODUCT_COLORS = ['#5B2D91', '#0288d1', '#f57c00', '#4caf50', '#d32f2f', '#7C3AED', '#00897b', '#c62828', '#1565c0', '#6a1b9a'];
+  const getProductMeta = (label: string, index: number) => {
+    const color = PRODUCT_COLORS[index % PRODUCT_COLORS.length];
+    return { color, bg: `${color}15`, label, keywords: [] };
+  };
+
+  const getCatMeta = (label: string, index: number = 0) => {
+    if (groupBy === 'product') {
+      return getProductMeta(label, index);
+    }
+    return CATEGORIES.find(c => c.label === label) || { color: '#607d8b', bg: '#eceff1', label: 'Other', keywords: [] };
+  };
 
   if (loading) return (
     <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}>
@@ -269,10 +304,15 @@ const GroupedIssues: React.FC = () => {
         <Box>
           <Typography variant="h4" fontWeight={800}>🗂️ Grouped Issues</Typography>
           <Typography variant="body2" color="text.secondary">
-            {filtered.length} tickets across {groups.length} categories
+            {filtered.length} tickets across {groups.length} {groupBy === 'product' ? 'products' : 'categories'}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Chip
+            label={`Past ${daysBack} days`}
+            size="small"
+            sx={{ bgcolor: '#ede9fe', color: '#5B2D91', fontWeight: 600 }}
+          />
           <Typography
             variant="caption" onClick={expandAll}
             sx={{ cursor: 'pointer', color: '#7C3AED', textDecoration: 'underline', userSelect: 'none' }}
@@ -305,12 +345,14 @@ const GroupedIssues: React.FC = () => {
           {uniquePriorities.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
         </TextField>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Product</InputLabel>
+          <InputLabel id="grouped-issues-product-filter-label" shrink>Product</InputLabel>
           <Select
+            labelId="grouped-issues-product-filter-label"
             multiple
+            displayEmpty
             value={productFilter}
             onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
-            input={<OutlinedInput label="Product" />}
+            input={<OutlinedInput notched label="Product" />}
             renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
           >
             {uniqueProducts.map(p => (
@@ -327,6 +369,13 @@ const GroupedIssues: React.FC = () => {
         >
           <MenuItem value="all">All</MenuItem>
           {uniqueComponents.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+        </TextField>
+        <TextField
+          select size="small" label="Group By" sx={{ minWidth: 140 }}
+          value={groupBy} onChange={e => { setGroupBy(e.target.value as 'category' | 'product'); setExpanded({}); }}
+        >
+          <MenuItem value="category">Issues</MenuItem>
+          <MenuItem value="product">Products</MenuItem>
         </TextField>
         {(statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0) && (
           <Chip
@@ -350,10 +399,10 @@ const GroupedIssues: React.FC = () => {
         }}
       />
 
-      {/* Category summary pills */}
+      {/* Group summary pills */}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-        {groups.map(g => {
-          const meta = getCatMeta(g.label);
+        {groups.map((g, idx) => {
+          const meta = getCatMeta(g.label, idx);
           return (
             <Chip
               key={g.label}
@@ -374,8 +423,8 @@ const GroupedIssues: React.FC = () => {
       </Box>
 
       {/* Group cards */}
-      {groups.map(g => {
-        const meta = getCatMeta(g.label);
+      {groups.map((g, idx) => {
+        const meta = getCatMeta(g.label, idx);
         const isOpen = !!expanded[g.label];
         const highCount = g.tickets.filter(t => ['Blocker','Critical'].includes(normalizePriority(t.priority))).length;
 

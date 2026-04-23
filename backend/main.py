@@ -90,7 +90,7 @@ class JiraSettings(BaseModel):
     email: str
     apiToken: str
     projectKey: str
-    daysBack: int = 30
+    daysBack: int = 90  # Default to 90 days of historical data
     quickFilterId: Optional[int] = None
     jql: Optional[str] = None   # custom JQL from Settings UI; overrides default filter
     confluenceSpaces: Optional[str] = None  # comma-separated Confluence space keys to scope KB search
@@ -1873,13 +1873,11 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         # returns HTTP 410 and instructs to migrate to /rest/api/3/search/jql.
         jira_url = f"{settings.url.rstrip('/')}/rest/api/3/search/jql"
 
-        days_back = getattr(settings, 'daysBack', 30)
+        days_back = getattr(settings, 'daysBack', 90)
         project_prefix = _resolve_key_prefix(settings.projectKey)
 
         # ── Build JQL ──
-        # Always fetch the full daysBack window so local DB exactly
-        # mirrors what Jira returns for the same query.  No incremental
-        # mode — it caused stale tickets to accumulate and counts to drift.
+        # Always apply the date filter based on daysBack setting
         date_filter = f'created >= -{days_back}d'
         
         if getattr(settings, 'jql', None):
@@ -1904,7 +1902,7 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 f'AND {date_filter} '
                 f'ORDER BY created DESC'
             )
-        print(f"[fetch] FULL mode — fetching last {days_back} days, JQL: {jql}")
+        print(f"[fetch] Fetching last {days_back} days, JQL: {jql}")
         
         # Jira API request basics
         auth = HTTPBasicAuth(settings.email, settings.apiToken)

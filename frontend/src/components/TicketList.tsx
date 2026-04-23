@@ -106,6 +106,7 @@ const TicketList: React.FC = () => {
       case 'summary':    return t.summary ?? '';
       case 'status':     return t.status ?? '';
       case 'priority':   return t.priority ?? '';
+      case 'assignee':   return t.assignee ?? '';
       case 'created':    return t.created ?? '';
       default:           return '';
     }
@@ -434,6 +435,7 @@ const TicketList: React.FC = () => {
   }
 
   const jiraBaseUrl = (getJiraSettingsFromStorage()?.url || '').replace(/\/+$/, '');
+  const daysBack = getJiraSettingsFromStorage()?.daysBack || 30;
 
   const clearAllFilters = () => {
     setStatusFilter('all');
@@ -450,23 +452,19 @@ const TicketList: React.FC = () => {
         <Typography variant="h4" component="h1">
           Incident Tickets ({filteredTickets.length}/{tickets.length})
         </Typography>
-        <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Chip
+            label={`Past ${daysBack} days`}
+            size="small"
+            sx={{ bgcolor: '#ede9fe', color: '#5B2D91', fontWeight: 600 }}
+          />
           <Button
             variant="outlined"
             startIcon={refreshing ? <CircularProgress size={18} /> : <Refresh />}
             onClick={handleRefresh}
-            disabled={refreshing || analyzing}
-            sx={{ mr: 1 }}
+            disabled={refreshing}
           >
             {refreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={analyzing ? <CircularProgress size={20} /> : <Psychology />}
-            onClick={runAnalysis}
-            disabled={analyzing || refreshing}
-          >
-            {analyzing ? 'Analyzing...' : 'Run Triage Analysis'}
           </Button>
         </Box>
       </Box>
@@ -500,12 +498,14 @@ const TicketList: React.FC = () => {
           ))}
         </TextField>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Product</InputLabel>
+          <InputLabel id="ticket-product-filter-label" shrink>Product</InputLabel>
           <Select
+            labelId="ticket-product-filter-label"
             multiple
+            displayEmpty
             value={productFilter}
             onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
-            input={<OutlinedInput label="Product" />}
+            input={<OutlinedInput notched label="Product" />}
             renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
           >
             {uniqueProducts.map(p => (
@@ -606,12 +606,13 @@ const TicketList: React.FC = () => {
           <TableHead>
             <TableRow>
               {([
-                { id: 'key',      label: 'Jira ID',    width: '9%'  },
-                { id: 'summary',  label: 'Summary',    width: '38%' },
-                { id: 'product',  label: 'Product',    width: '15%' },
-                { id: 'status',   label: 'Status',     width: '10%' },
-                { id: 'priority', label: 'Priority',   width: '10%' },
-                { id: 'created',  label: 'Created',    width: '18%' },
+                { id: 'key',      label: 'Jira ID',    width: '8%'  },
+                { id: 'summary',  label: 'Summary',    width: '32%' },
+                { id: 'product',  label: 'Product',    width: '12%' },
+                { id: 'status',   label: 'Status',     width: '9%' },
+                { id: 'priority', label: 'Priority',   width: '9%' },
+                { id: 'assignee', label: 'Assignee',   width: '14%' },
+                { id: 'created',  label: 'Created',    width: '16%' },
               ] as { id: string; label: string; width: string }[]).map(col => (
                 <TableCell
                   key={col.id}
@@ -677,11 +678,6 @@ const TicketList: React.FC = () => {
                           <strong>Description:</strong><br />
                           {ticket.description || 'No description available'}
                         </Typography>
-                        {ticket.assignee !== 'unassigned' && (
-                          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                            <strong>Assignee:</strong> {ticket.assignee}
-                          </Typography>
-                        )}
                       </AccordionDetails>
                     </Accordion>
                   </TableCell>
@@ -713,6 +709,11 @@ const TicketList: React.FC = () => {
 
 
 
+                  <TableCell sx={{ py: 0.8, px: 1.5 }}>
+                    <Typography variant="body2" noWrap title={ticket.assignee}>
+                      {ticket.assignee === 'unassigned' ? '—' : ticket.assignee}
+                    </Typography>
+                  </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5 }}>
                     <Typography variant="body2" noWrap>
                       {formatDate(ticket.created)}

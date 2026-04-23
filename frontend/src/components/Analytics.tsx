@@ -4,7 +4,7 @@ import {
   CircularProgress, Button, LinearProgress, TextField, MenuItem, Chip,
   Checkbox, ListItemText, OutlinedInput, Select, InputLabel, FormControl,
 } from '@mui/material';
-import { Refresh, TableChart, TrendingUp, TrendingDown, PlayArrow } from '@mui/icons-material';
+import { Refresh, TableChart, TrendingUp, TrendingDown, PlayArrow, OpenInNew, CheckCircle, AddCircle } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar as RechartsBar, XAxis, YAxis, CartesianGrid } from 'recharts';
@@ -116,6 +116,7 @@ const Analytics: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [componentFilter, setComponentFilter] = useState('all');
   const [productFilter, setProductFilter] = useState<string[]>([]);
+  const [recentCount, setRecentCount] = useState(10);
 
   const normalizePriority = (p: string | undefined | null): string => {
     if (!p) return 'Unset';
@@ -126,11 +127,13 @@ const Analytics: React.FC = () => {
   };
 
   let jiraBaseUrl = '';
+  let daysBack = 90; // default
   try {
     const js = localStorage.getItem('jiraSettings');
     if (js) {
       const parsed = JSON.parse(js);
       jiraBaseUrl = parsed.url || '';
+      daysBack = parsed.daysBack || 90;
     }
   } catch (e) {
     jiraBaseUrl = '';
@@ -235,6 +238,23 @@ const Analytics: React.FC = () => {
   const uniqueProducts = useMemo(() =>
     Array.from(new Set(tickets.map(t => t.product_name).filter(Boolean))).sort() as string[],
   [tickets]);
+
+  // Recently opened tickets (sorted by created date, newest first)
+  const recentlyOpenedTickets = useMemo(() => {
+    return [...filtered]
+      .filter(t => t.created)
+      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+      .slice(0, recentCount);
+  }, [filtered, recentCount]);
+
+  // Recently closed tickets (status is Closed, Resolved, or Done - sorted by created date)
+  const recentlyClosedTickets = useMemo(() => {
+    const closedStatuses = ['closed', 'resolved', 'done'];
+    return [...filtered]
+      .filter(t => t.created && closedStatuses.includes((t.status || '').toLowerCase()))
+      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+      .slice(0, recentCount);
+  }, [filtered, recentCount]);
 
   const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0;
 
@@ -387,20 +407,36 @@ const Analytics: React.FC = () => {
     : 0;
   const avgSeverityLabel = avgSeverity >= 0.8 ? 'Critical' : avgSeverity >= 0.6 ? 'High' : avgSeverity >= 0.4 ? 'Medium' : 'Low';
 
-  // Trend Analysis: tickets created by year and month
+  // Trend Analysis: tickets created by year and month (based on daysBack filter)
   const now = new Date();
+  
+  // Calculate number of months to show based on daysBack setting
+  const monthsToShow = Math.max(1, Math.ceil(daysBack / 30));
+  
+  // Generate months based on daysBack
+  const monthsRange: string[] = [];
+  for (let i = monthsToShow - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthsRange.push(yearMonth);
+  }
   
   // Group tickets by year-month
   const monthlyGroups: Record<string, number> = {};
+  // Initialize with 0 for the months in range
+  monthsRange.forEach(ym => { monthlyGroups[ym] = 0; });
+  // Count tickets (use filtered tickets to reflect applied filters)
   filtered.forEach(t => {
     if (!t.created) return;
     const created = new Date(t.created);
     const yearMonth = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`;
-    monthlyGroups[yearMonth] = (monthlyGroups[yearMonth] || 0) + 1;
+    if (monthsRange.includes(yearMonth)) {
+      monthlyGroups[yearMonth] = (monthlyGroups[yearMonth] || 0) + 1;
+    }
   });
 
   // Sort by year-month and create display data
-  const sortedMonths = Object.keys(monthlyGroups).sort();
+  const sortedMonths = monthsRange;
   const trendData = sortedMonths.map(yearMonth => {
     const [year, month] = yearMonth.split('-');
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -414,16 +450,23 @@ const Analytics: React.FC = () => {
   });
 
   // Calculate total tickets with valid created dates for data availability message
-  const ticketsWithDates = filtered.filter(t => t.created).length;
+  const ticketsWithDates = tickets.filter(t => t.created).length;
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h4" fontWeight={800}>📈 Triage Analytics</Typography>
-        <Button size="small" startIcon={<Refresh />} onClick={load}
-          sx={{ borderRadius: 20, borderColor: '#7C3AED', color: '#7C3AED' }} variant="outlined">
-          Refresh
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Chip
+            label={`Past ${daysBack} days`}
+            size="small"
+            sx={{ bgcolor: '#ede9fe', color: '#5B2D91', fontWeight: 600 }}
+          />
+          <Button size="small" startIcon={<Refresh />} onClick={load}
+            sx={{ borderRadius: 20, borderColor: '#7C3AED', color: '#7C3AED' }} variant="outlined">
+            Refresh
+          </Button>
+        </Box>
       </Box>
 
       {/* Filters row */}
@@ -443,12 +486,14 @@ const Analytics: React.FC = () => {
           {uniquePriorities.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
         </TextField>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Product</InputLabel>
+          <InputLabel id="analytics-product-filter-label" shrink>Product</InputLabel>
           <Select
+            labelId="analytics-product-filter-label"
             multiple
+            displayEmpty
             value={productFilter}
             onChange={e => { setProductFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
-            input={<OutlinedInput label="Product" />}
+            input={<OutlinedInput notched label="Product" />}
             renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
           >
             {uniqueProducts.map(p => (
@@ -481,6 +526,147 @@ const Analytics: React.FC = () => {
           </Typography>
         )}
       </Box>
+
+      {/* Recently Opened / Recently Closed NCIPs */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+        <Typography variant="h6" fontWeight={700}>Recent NCIPs</Typography>
+        <TextField
+          select
+          size="small"
+          label="Show last"
+          value={recentCount}
+          onChange={e => setRecentCount(Number(e.target.value))}
+          sx={{ minWidth: 100 }}
+        >
+          <MenuItem value={5}>5</MenuItem>
+          <MenuItem value={10}>10</MenuItem>
+          <MenuItem value={15}>15</MenuItem>
+          <MenuItem value={20}>20</MenuItem>
+        </TextField>
+      </Box>
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        {/* Recently Opened */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <AddCircle sx={{ color: '#4caf50' }} />
+                Recently Opened
+              </Typography>
+              {recentlyOpenedTickets.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No recently opened tickets.</Typography>
+              ) : (
+                <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+                  {recentlyOpenedTickets.map(t => (
+                    <Box
+                      component="li"
+                      key={t.key}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 1,
+                        py: 1,
+                        borderBottom: '1px solid rgba(0,0,0,0.06)',
+                        '&:last-child': { borderBottom: 'none' },
+                      }}
+                    >
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {jiraBaseUrl ? (
+                            <a
+                              href={`${jiraBaseUrl.replace(/\/$/, '')}/browse/${t.key}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Typography variant="body2" fontWeight={600} sx={{ color: '#5B2D91' }}>
+                                {t.key}
+                              </Typography>
+                              <OpenInNew sx={{ fontSize: 14, color: '#9B6EF3' }} />
+                            </a>
+                          ) : (
+                            <Typography variant="body2" fontWeight={600} sx={{ color: '#5B2D91' }}>
+                              {t.key}
+                            </Typography>
+                          )}
+                          <Chip label={t.status} size="small" sx={{ fontSize: '0.65rem', height: 18 }} />
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" noWrap title={t.summary}>
+                          {t.summary}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled">
+                          {new Date(t.created).toLocaleDateString()}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Recently Closed */}
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <CheckCircle sx={{ color: '#0288d1' }} />
+                Recently Closed
+              </Typography>
+              {recentlyClosedTickets.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">No recently closed tickets.</Typography>
+              ) : (
+                <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+                  {recentlyClosedTickets.map(t => (
+                    <Box
+                      component="li"
+                      key={t.key}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 1,
+                        py: 1,
+                        borderBottom: '1px solid rgba(0,0,0,0.06)',
+                        '&:last-child': { borderBottom: 'none' },
+                      }}
+                    >
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {jiraBaseUrl ? (
+                            <a
+                              href={`${jiraBaseUrl.replace(/\/$/, '')}/browse/${t.key}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Typography variant="body2" fontWeight={600} sx={{ color: '#5B2D91' }}>
+                                {t.key}
+                              </Typography>
+                              <OpenInNew sx={{ fontSize: 14, color: '#9B6EF3' }} />
+                            </a>
+                          ) : (
+                            <Typography variant="body2" fontWeight={600} sx={{ color: '#5B2D91' }}>
+                              {t.key}
+                            </Typography>
+                          )}
+                          <Chip label={t.status} size="small" sx={{ fontSize: '0.65rem', height: 18, bgcolor: '#e3f2fd' }} />
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" noWrap title={t.summary}>
+                          {t.summary}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled">
+                          {new Date(t.created).toLocaleDateString()}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       {/* Summary stat tiles */}
       <Card sx={{ mb: 3 }}>
@@ -566,43 +752,6 @@ const Analytics: React.FC = () => {
                 </Typography>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Triage Coverage Banner */}
-      <Card sx={{ mb: 3, background: coveragePct === 100 ? 'linear-gradient(135deg, #e8f5e9, #f1f8e9)' : coveragePct >= 50 ? 'linear-gradient(135deg, #fff3e0, #fff8e1)' : 'linear-gradient(135deg, #ffebee, #fce4ec)' }}>
-        <CardContent sx={{ py: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {coveragePct >= 70 ? <TrendingUp sx={{ color: '#4caf50' }} /> : <TrendingDown sx={{ color: '#f57c00' }} />}
-              <Typography variant="subtitle1" fontWeight={700}>Triage Coverage</Typography>
-            </Box>
-            <Typography variant="h5" fontWeight={800} sx={{ color: coveragePct >= 70 ? '#2e7d32' : coveragePct >= 50 ? '#e65100' : '#c62828' }}>
-              {coveragePct}%
-            </Typography>
-          </Box>
-          <LinearProgress
-            variant="determinate"
-            value={coveragePct}
-            sx={{
-              height: 8, borderRadius: 4, mb: 1,
-              backgroundColor: 'rgba(0,0,0,0.1)',
-              '& .MuiLinearProgress-bar': {
-                borderRadius: 4,
-                background: coveragePct >= 70 ? 'linear-gradient(90deg,#4caf50,#66bb6a)' : coveragePct >= 50 ? 'linear-gradient(90deg,#f57c00,#ffb74d)' : 'linear-gradient(90deg,#d32f2f,#ef5350)',
-              }
-            }}
-          />
-          <Typography variant="body2" color="text.secondary">
-            {analyzed} of {total} tickets analyzed · {unanalyzed > 0 ? `${unanalyzed} remaining` : 'All tickets triaged!'}
-          </Typography>
-          {unanalyzed > 0 && (
-            <Button size="small" variant="outlined" onClick={runAnalysis} disabled={analyzing}
-              startIcon={analyzing ? <CircularProgress size={14} /> : <PlayArrow />}
-              sx={{ mt: 1, borderRadius: 20, borderColor: '#7C3AED', color: '#7C3AED', fontSize: '0.75rem' }}>
-              {analyzing ? 'Analyzing…' : 'Analyze Remaining Tickets'}
-            </Button>
           )}
         </CardContent>
       </Card>

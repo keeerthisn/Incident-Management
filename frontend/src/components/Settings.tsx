@@ -23,7 +23,7 @@ const Settings: React.FC = () => {
     email: '',
     apiToken: '',
     projectKey: 'NCIP',
-    daysBack: 30,
+    daysBack: 90,
     jql: '',
     confluenceSpaces: '',
   });
@@ -49,7 +49,7 @@ const Settings: React.FC = () => {
     if (savedSettings) {
       try {
         const parsedSettings = JSON.parse(savedSettings);
-        setJiraSettings({ url: 'https://n-able.atlassian.net', projectKey: 'NCIP', daysBack: 30, jql: '', confluenceSpaces: '', ...parsedSettings });
+        setJiraSettings({ url: 'https://n-able.atlassian.net', projectKey: 'NCIP', daysBack: 90, jql: '', confluenceSpaces: '', ...parsedSettings });
       } catch (error) {
         console.error('Error loading saved Jira settings:', error);
       }
@@ -292,8 +292,8 @@ const Settings: React.FC = () => {
                     type="number"
                     inputProps={{ min: 1, max: 3650 }}
                     value={jiraSettings.daysBack}
-                    onChange={(e) => setJiraSettings({ ...jiraSettings, daysBack: parseInt(e.target.value) || 30 })}
-                    helperText="All tickets created in the last N days will be fetched (default: 30)"
+                    onChange={(e) => setJiraSettings({ ...jiraSettings, daysBack: parseInt(e.target.value) || 90 })}
+                    helperText="Fetch tickets created in the last N days (default: 90)"
                   />
                 </Grid>
                 

@@ -1,0 +1,10 @@
+<svg width="320" height="92" viewBox="0 0 320 92" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- N mark -->
+  <rect x="22" y="21" width="20" height="48" fill="#FFFFFF"/>
+  <rect x="63" y="21" width="20" height="48" fill="#FFFFFF"/>
+  <polygon points="22,21 42,21 83,69 63,69" fill="#FFFFFF"/>
+  <rect x="63" y="38" width="24" height="17" fill="#A63BFF"/>
+
+  <!-- Wordmark -->
+  <text x="112" y="56" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="27" font-weight="900" letter-spacing="1" fill="#FFFFFF">N-ABLE</text>
+</svg>

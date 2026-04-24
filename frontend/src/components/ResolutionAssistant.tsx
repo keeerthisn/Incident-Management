@@ -196,48 +196,12 @@ const ResolutionAssistant: React.FC = () => {
 
           {investigateResult && (
             <Box sx={{ mt: 2 }}>
-              {/* Summary + Confluence link for investigated ticket */}
+              {/* Summary */}
               {investigateResult.summary && (
                 <Alert severity="info" sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-                    <Box>
-                      {(investigateResult.summary as string[]).map((s: string, i: number) => (
-                        <Typography key={i} variant="body2">{s}</Typography>
-                      ))}
-                    </Box>
-                    {(() => {
-                      const cfl = getConfluenceUrl(investigateKey);
-                      if (confluenceLinksLoading && !confluenceLinks[investigateKey]) return <CircularProgress size={16} />;
-                      if (!cfl) return null;
-                      return (
-                        <Tooltip title={cfl.title} arrow>
-                          <Link
-                            href={cfl.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            underline="hover"
-                            sx={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 0.5,
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: cfl.isDirect ? '#1565c0' : '#6a1b9a',
-                              bgcolor: cfl.isDirect ? '#e3f2fd' : '#f3e5f5',
-                              border: `1px solid ${cfl.isDirect ? '#90caf944' : '#ce93d844'}`,
-                              borderRadius: 1,
-                              px: 1.2,
-                              py: 0.5,
-                              whiteSpace: 'nowrap',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <MenuBook sx={{ fontSize: 16 }} /> Confluence <OpenInNew sx={{ fontSize: 12 }} />
-                          </Link>
-                        </Tooltip>
-                      );
-                    })()}
-                  </Box>
+                  {(investigateResult.summary as string[]).map((s: string, i: number) => (
+                    <Typography key={i} variant="body2">{s}</Typography>
+                  ))}
                 </Alert>
               )}
 
@@ -245,7 +209,7 @@ const ResolutionAssistant: React.FC = () => {
                 <Tab label="Root Cause" />
                 <Tab label="Workarounds" />
                 <Tab label="Playbook" />
-                <Tab label={`Knowledge Base (${(investigateResult.knowledgeBaseReferences?.references || []).length})`} />
+                <Tab label={`Knowledge Base (${(investigateResult.knowledgeBaseReferences?.references || []).length + (getConfluenceUrl(investigateKey) ? 1 : 0)})`} />
                 <Tab label={`Similar (${(investigateResult.similarOrDuplicateTickets || []).length})`} />
               </Tabs>
 
@@ -389,6 +353,41 @@ const ResolutionAssistant: React.FC = () => {
               {/* Tab 3: Knowledge Base Articles */}
               {investigateTab === 3 && (
                 <Box>
+                  {/* Confluence link for this ticket */}
+                  {(() => {
+                    const cfl = getConfluenceUrl(investigateKey);
+                    if (confluenceLinksLoading && !confluenceLinks[investigateKey]) return <CircularProgress size={16} sx={{ mb: 1 }} />;
+                    if (!cfl) return null;
+                    return (
+                      <Box sx={{ mb: 2 }}>
+                        <Tooltip title={cfl.title} arrow>
+                          <Link
+                            href={cfl.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            underline="hover"
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: cfl.isDirect ? '#1565c0' : '#6a1b9a',
+                              bgcolor: cfl.isDirect ? '#e3f2fd' : '#f3e5f5',
+                              border: `1px solid ${cfl.isDirect ? '#90caf944' : '#ce93d844'}`,
+                              borderRadius: 1,
+                              px: 1.2,
+                              py: 0.5,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <MenuBook sx={{ fontSize: 16 }} /> Search Confluence for {investigateKey} <OpenInNew sx={{ fontSize: 12 }} />
+                          </Link>
+                        </Tooltip>
+                      </Box>
+                    );
+                  })()}
+
                   {(investigateResult.knowledgeBaseReferences?.references || []).length > 0 ? (
                     <List dense>
                       {(investigateResult.knowledgeBaseReferences.references as Array<{ title: string; url: string; excerpt: string }>).map((kb, i) => (

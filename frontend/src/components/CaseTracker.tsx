@@ -465,6 +465,7 @@ const CaseTracker: React.FC = () => {
 
               <Badge
                 badgeContent={group.count}
+                max={9999}
                 color="primary"
                 sx={{ '& .MuiBadge-badge': { fontSize: '0.7rem' } }}
               >

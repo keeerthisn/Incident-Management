@@ -119,6 +119,7 @@ const TicketList: React.FC = () => {
   const colValue = (t: Ticket, col: string): string | number => {
     switch (col) {
       case 'key':        return t.key ?? '';
+      case 'sf_id':      return t.crm_id ?? '';
       case 'product':    return t.product_name ?? '';
       case 'summary':    return t.summary ?? '';
       case 'status':     return t.status ?? '';
@@ -686,15 +687,17 @@ const TicketList: React.FC = () => {
                   </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
                     {ticket.crm_id ? (
-                      <Link
-                        href={`https://n-able.lightning.force.com/lightning/r/Case/${ticket.crm_id}/view`}
-                        target="_blank"
-                        rel="noreferrer"
-                        underline="hover"
-                        sx={{ fontSize: '0.8rem' }}
-                      >
-                        {ticket.crm_id.substring(0, 15)}...
-                      </Link>
+                      <Tooltip title={ticket.crm_id} arrow>
+                        <Link
+                          href={`https://n-able.lightning.force.com/lightning/r/Case/${ticket.crm_id}/view`}
+                          target="_blank"
+                          rel="noreferrer"
+                          underline="hover"
+                          sx={{ fontSize: '0.8rem' }}
+                        >
+                          {ticket.crm_id.length > 18 ? `${ticket.crm_id.substring(0, 15)}...` : ticket.crm_id}
+                        </Link>
+                      </Tooltip>
                     ) : (
                       <Typography variant="body2" color="text.secondary">—</Typography>
                     )}

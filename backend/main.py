@@ -2664,6 +2664,14 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 elif crm_raw is not None:
                     crm_id_val = str(crm_raw).strip() or None
 
+            # Fallback: extract SF case number from summary + description text
+            if not crm_id_val:
+                desc_text = _extract_adf_text(fields.get("description", ""))
+                combined_text = f"{fields.get('summary') or ''} {desc_text}"
+                sf_ids = _extract_sf_case_ids(combined_text)
+                if sf_ids:
+                    crm_id_val = sf_ids[0]
+
             ticket = {
                 "key": issue.get("key", ""),
                 "summary": fields.get("summary") or "",

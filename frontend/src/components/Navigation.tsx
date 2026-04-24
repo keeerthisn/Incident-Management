@@ -141,43 +141,6 @@ const Navigation: React.FC = () => {
         })}
       </List>
 
-      {/* Knowledge Base — external link to Confluence */}
-      {confluenceUrl && (
-        <List sx={{ pt: 0 }}>
-          <ListItem disablePadding sx={{ display: 'block', mb: 0.5, px: 1 }}>
-            <ListItemButton
-              component="a"
-              href={confluenceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{
-                borderRadius: 2,
-                py: 1.1,
-                px: 1.5,
-                bgcolor: 'transparent',
-                borderLeft: '3px solid transparent',
-                '&:hover': { bgcolor: HOVER_BG },
-                transition: 'background 0.15s',
-              }}
-            >
-              <ListItemIcon
-                sx={{ minWidth: 36, color: ICON_DIMMED, transition: 'color 0.15s' }}
-              >
-                <MenuBook />
-              </ListItemIcon>
-              <ListItemText
-                primary="Knowledge Base"
-                primaryTypographyProps={{
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: TEXT_DIMMED,
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
-        </List>
-      )}
-
       {/* Footer branding */}
       <Box sx={{ mt: 'auto', p: 2, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.68rem' }}>

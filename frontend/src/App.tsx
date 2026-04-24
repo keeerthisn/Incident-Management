@@ -33,10 +33,15 @@ const NableLogo: React.FC = () => (
 );
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => sessionStorage.getItem('isLoggedIn') === 'true');
+
+  const handleLogin = () => {
+    sessionStorage.setItem('isLoggedIn', 'true');
+    setIsLoggedIn(true);
+  };
 
   if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+    return <Login onLogin={handleLogin} />;
   }
 
   return (

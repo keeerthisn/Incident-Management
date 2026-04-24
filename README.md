@@ -4,6 +4,66 @@ N-able themed web app for managing Jira incidents — fetch tickets, group by is
 
 ---
 
+## 🎯 Overview
+
+The **Cove Incident Management Tool** is a comprehensive incident triage and analysis platform that integrates with Jira and Salesforce to help support teams:
+
+- **Quickly triage** incoming incidents with AI-powered routing suggestions
+- **Identify patterns** across similar issues affecting multiple customers
+- **Detect duplicates** by cross-referencing Salesforce case numbers
+- **Analyze root causes** with Confluence knowledge base integration
+- **Track escalations** and prioritize high-impact incidents
+
+---
+
+## ✨ Key Features
+
+### 📊 Dashboard
+Real-time overview of ticket metrics, priority distribution, and recent activity.
+
+### 🎫 Tickets
+- Browse all Jira tickets with advanced filtering (status, priority, product, component)
+- View escalation status from Jira custom fields
+- Click-through links to original Jira issues
+- Analyze individual tickets with AI routing suggestions
+
+### 📁 Grouped Issues
+Tickets automatically grouped by issue type/component for pattern recognition.
+
+### 📈 Analytics
+- Monthly ticket creation trends
+- Priority and status breakdowns
+- Product-wise distribution charts
+- Filtered views based on date range (daysBack setting)
+
+### 🧠 Root Cause Analyzer
+- AI-powered analysis of ticket descriptions
+- Confluence knowledge base search for related documentation
+- Suggested investigation steps and action items
+
+### 🔧 Resolution Assistant
+- Find similar resolved tickets to guide troubleshooting
+- Cross-reference historical resolutions
+- Confidence scoring for suggested solutions
+
+### ⚙️ Settings
+- Jira connection configuration (URL, API token, project key, JQL)
+- Salesforce integration (OAuth2 or username/password authentication)
+- Confluence space selection for knowledge base scope
+- Customizable date range (daysBack filter)
+
+---
+
+## 🔐 Integrations
+
+| Platform | Purpose | Auth Method |
+|----------|---------|-------------|
+| **Jira** | Fetch incidents, custom fields (escalation, severity) | API Token |
+| **Confluence** | Knowledge base search for root cause analysis | API Token (same as Jira) |
+| **Salesforce** | Case details, duplicate detection | OAuth2 (Connected App) or Password |
+
+---
+
 ## Prerequisites
 
 Make sure the following are installed on the machine:
@@ -125,16 +185,22 @@ Incident Tracket/
 │   └── tickets.db         # SQLite database (auto-created on first run)
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx
+│   │   ├── App.tsx        # Main app with routing
+│   │   ├── config.ts      # API base URL configuration
 │   │   └── components/
-│   │       ├── Dashboard.tsx
-│   │       ├── TicketList.tsx
-│   │       ├── GroupedIssues.tsx
-│   │       ├── Analytics.tsx
-│   │       ├── Navigation.tsx
-│   │       └── Settings.tsx
+│   │       ├── Dashboard.tsx         # Overview metrics
+│   │       ├── TicketList.tsx        # Ticket table with filters
+│   │       ├── GroupedIssues.tsx     # Grouped by issue type
+│   │       ├── Analytics.tsx         # Charts and trends
+│   │       ├── RootCauseAnalyzer.tsx # AI root cause analysis
+│   │       ├── ResolutionAssistant.tsx # Find similar resolved tickets
+│   │       ├── Navigation.tsx        # Sidebar menu
+│   │       ├── Settings.tsx          # Jira & Salesforce config
+│   │       └── Login.tsx             # Login screen
 │   ├── build/             # Pre-built static files (serve these)
 │   └── package.json
+├── docker-compose.yml     # Optional Docker deployment
+├── render.yaml            # Render.com deployment config
 └── README.md
 ```
 
@@ -148,8 +214,12 @@ Incident Tracket/
 | POST | `/api/fetch-tickets` | Fetch tickets from Jira |
 | GET | `/api/tickets` | Get all stored tickets |
 | POST | `/api/analyze-tickets` | Run triage analysis |
-| POST | `/api/debug-fields` | Inspect Jira custom fields |
-| GET | `/api/jira-fields` | List all Jira fields |
+| POST | `/api/test-connection` | Test Jira connection |
+| POST | `/api/sf-test-connection` | Test Salesforce connection |
+| POST | `/api/sf-cases` | Fetch SF case details |
+| POST | `/api/root-cause-analyze` | Analyze root cause with AI |
+| POST | `/api/resolution-assistant` | Find similar resolved tickets |
+| POST | `/api/confluence-spaces` | List Confluence spaces |
 
 Interactive API docs: **http://localhost:8000/docs**
 

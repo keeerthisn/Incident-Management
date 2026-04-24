@@ -8,8 +8,6 @@ import {
   Button,
   Grid,
   Alert,
-  Switch,
-  FormControlLabel,
   CircularProgress,
   Chip,
   Autocomplete,
@@ -27,7 +25,7 @@ const Settings: React.FC = () => {
     jql: '',
     confluenceSpaces: '',
   });
-  
+
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'testing' | 'success' | 'error'>('unknown');
   const [connectionMessage, setConnectionMessage] = useState<string>('');
   const [saving, setSaving] = useState(false);
@@ -110,7 +108,6 @@ const Settings: React.FC = () => {
     
     // Save to localStorage
     localStorage.setItem('jiraSettings', JSON.stringify(jiraSettings));
-    
     // Trigger a custom event to notify other components
     window.dispatchEvent(new CustomEvent('jiraSettingsUpdated'));
     
@@ -465,32 +462,6 @@ const Settings: React.FC = () => {
                   ))}
                 </Box>
               )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Additional Settings */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                🎛️ Triage Settings
-              </Typography>
-              
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={6}>
-                  <FormControlLabel
-                    control={<Switch defaultChecked />}
-                    label="Enable Auto-Processing"
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <FormControlLabel
-                    control={<Switch />}
-                    label="Email Notifications"
-                  />
-                </Grid>
-              </Grid>
             </CardContent>
           </Card>
         </Grid>

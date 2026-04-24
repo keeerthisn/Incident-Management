@@ -10,6 +10,7 @@ import GroupedIssues from './components/GroupedIssues';
 import Login from './components/Login';
 import RootCauseAnalyzer from './components/RootCauseAnalyzer';
 import ResolutionAssistant from './components/ResolutionAssistant';
+import CaseTracker from './components/CaseTracker';
 
 const NableLogo: React.FC = () => (
   <Box
@@ -88,6 +89,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/tickets" element={<TicketList />} />
+              <Route path="/case-tracker" element={<CaseTracker />} />
               <Route path="/grouped" element={<GroupedIssues />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/root-cause-analyzer" element={<RootCauseAnalyzer />} />

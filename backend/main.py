@@ -138,6 +138,32 @@ ACTION_HINTS = [
     "ask customer", "capture", "compare", "validate", "monitor", "logs",
 ]
 
+# Salesforce case number patterns
+SF_CASE_PATTERNS = [
+    r'(?:SF|Salesforce|Case|SFDC)\s*(?:#|:|\s)?\s*(\d{7,10})',  # SF Case: 12345678, SF #12345678
+    r'(?:case\s*number|case\s*id|sf\s*case)\s*[:=]?\s*(\d{7,10})',  # Case Number: 12345678
+    r'\b(\d{8})\b(?=.*(?:salesforce|sf\s*case|support\s*case))',  # 8-digit number near salesforce mention
+]
+
+
+def _extract_sf_case_ids(text: str) -> list[str]:
+    """Extract Salesforce case numbers from text."""
+    if not text:
+        return []
+    
+    case_ids = set()
+    text_lower = text.lower()
+    
+    for pattern in SF_CASE_PATTERNS:
+        matches = re.findall(pattern, text_lower, re.IGNORECASE)
+        for match in matches:
+            # Normalize to string and filter valid SF case numbers (typically 8 digits)
+            case_id = str(match).strip()
+            if len(case_id) >= 7 and case_id.isdigit():
+                case_ids.add(case_id)
+    
+    return list(case_ids)
+
 
 def _to_text(value: Any) -> str:
     if value is None:
@@ -752,6 +778,7 @@ def init_db():
             routing_suggestion TEXT,
             confidence_score REAL,
             issue_type TEXT,
+            escalation TEXT,
             fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -770,6 +797,16 @@ def init_db():
         cursor.execute('ALTER TABLE tickets ADD COLUMN labels TEXT')
     if 'issue_type' not in existing_columns:
         cursor.execute('ALTER TABLE tickets ADD COLUMN issue_type TEXT')
+    if 'escalation' not in existing_columns:
+        cursor.execute('ALTER TABLE tickets ADD COLUMN escalation TEXT')
+    if 'escalation_notes' not in existing_columns:
+        cursor.execute('ALTER TABLE tickets ADD COLUMN escalation_notes TEXT')
+    if 'linked_issues' not in existing_columns:
+        cursor.execute('ALTER TABLE tickets ADD COLUMN linked_issues TEXT')
+    if 'crm_id' not in existing_columns:
+        cursor.execute('ALTER TABLE tickets ADD COLUMN crm_id TEXT')
+    if 'web_links' not in existing_columns:
+        cursor.execute('ALTER TABLE tickets ADD COLUMN web_links TEXT')
 
     conn.commit()
     conn.close()
@@ -809,6 +846,32 @@ async def debug_jira_fields(settings: JiraSettings):
     with open("/tmp/jira_fields.json", "w") as f:
         _json.dump({"key": issue["key"], "fields": interesting}, f, indent=2)
     return {"key": issue["key"], "fields": interesting}
+
+@app.post("/api/list-all-fields")
+async def list_all_jira_fields(settings: JiraSettings):
+    """List all available Jira fields with their names and IDs to help identify CRM ID field."""
+    auth = HTTPBasicAuth(settings.email, settings.apiToken)
+    field_resp = requests.get(
+        f"{settings.url.rstrip('/')}/rest/api/3/field",
+        auth=auth,
+        headers={"Accept": "application/json"},
+        timeout=(8, 15),
+        verify=False,
+    )
+    if field_resp.status_code != 200:
+        raise HTTPException(status_code=field_resp.status_code, detail=field_resp.text)
+    all_fields = field_resp.json()
+    # Filter to show custom fields and any with CRM/SF/Salesforce/case in the name
+    result = []
+    for f in all_fields:
+        fname = (f.get("name") or "").lower()
+        field_id = f.get("id") or ""
+        field_name = f.get("name") or ""
+        # Include if it mentions CRM, Salesforce, SF, Case, or is a custom field
+        if any(x in fname for x in ["crm", "salesforce", "sf", "case"]):
+            result.append({"id": field_id, "name": field_name, "type": "match"})
+    # Also return total count
+    return {"total_fields": len(all_fields), "crm_related": result}
 
 @app.post("/api/test-connection")
 async def test_jira_connection(settings: JiraSettings):
@@ -1918,9 +1981,15 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             nci_severity_field_id = JIRA_FIELD_CACHE.get("nciSeverityFieldId")
             product_name_field_id = JIRA_FIELD_CACHE.get("productNameFieldId")
             product_name_field_candidates = JIRA_FIELD_CACHE.get("productNameFieldCandidates") or []
-            print(f"[field-cache] Using cached field IDs: nci_severity={nci_severity_field_id}, product_name={product_name_field_id}, candidates={len(product_name_field_candidates)}")
+            escalated_field_id = JIRA_FIELD_CACHE.get("escalatedFieldId")
+            escalation_notes_field_id = JIRA_FIELD_CACHE.get("escalationNotesFieldId")
+            crm_id_field_id = JIRA_FIELD_CACHE.get("crmIdFieldId")
+            print(f"[field-cache] Using cached field IDs: nci_severity={nci_severity_field_id}, product_name={product_name_field_id}, escalated={escalated_field_id}, crm_id={crm_id_field_id}")
         else:
             product_name_field_candidates = []
+            escalated_field_id = None
+            escalation_notes_field_id = None
+            crm_id_field_id = None
             try:
                 print(f"[field-discovery] Discovering custom fields from Jira...")
                 _jira_session.auth = auth
@@ -1932,18 +2001,56 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 if field_resp.status_code == 200:
                     all_fields = field_resp.json()
                     print(f"[field-discovery] Found {len(all_fields)} total fields in Jira")
+                    
+                    # Debug: print all field names containing potentially related keywords
+                    print(f"[field-discovery] Searching for CRM/SF/Case related fields...")
+                    for f in all_fields:
+                        fname_lower = (f.get("name") or "").lower()
+                        if any(x in fname_lower for x in ["crm", "sf", "salesforce", "case", "id"]):
+                            print(f"[field-discovery]   Potential match: '{f.get('name')}' → {f.get('id')}")
+                    
                     # Track all product-related fields for better selection
                     product_candidates = []
                     
+                    # First pass: collect all severity-related fields
+                    severity_candidates = []
                     for f in all_fields:
                         fname = (f.get("name") or "").lower().strip()
                         field_id = f.get("id")
                         field_name = f.get("name") or ""
                         
-                        # NCI Severity field matching
-                        if not nci_severity_field_id and ("nci severity" in fname or "severity" in fname):
-                            nci_severity_field_id = field_id
-                            print(f"[field-discovery] ✓ Found NCI Severity field: '{field_name}' → {nci_severity_field_id}")
+                        # Collect NCI Severity candidates with priority scoring
+                        if "nci" in fname and "severity" in fname:
+                            severity_candidates.append((field_id, field_name, 100))  # Exact "NCI Severity" highest priority
+                            print(f"[field-discovery] Found NCI Severity candidate: '{field_name}' → {field_id} (score=100)")
+                        elif fname == "nci severity":
+                            severity_candidates.append((field_id, field_name, 100))
+                            print(f"[field-discovery] Found NCI Severity candidate: '{field_name}' → {field_id} (score=100)")
+                        
+                        # Escalated field matching
+                        if not escalated_field_id and fname == "escalated":
+                            escalated_field_id = field_id
+                            print(f"[field-discovery] ✓ Found Escalated field: '{field_name}' → {escalated_field_id}")
+                        
+                        # Escalation Notes field matching
+                        if not escalation_notes_field_id and (fname == "escalation notes" or fname == "escalationnotes"):
+                            escalation_notes_field_id = field_id
+                            print(f"[field-discovery] ✓ Found Escalation Notes field: '{field_name}' → {escalation_notes_field_id}")
+                        
+                        # CRM ID field matching (Salesforce Case ID) - more flexible matching
+                        if "crm" in fname or "salesforce" in fname or "sf id" in fname or "sfid" in fname:
+                            print(f"[field-discovery] Found CRM/SF-related field: '{field_name}' → {field_id}")
+                        if not crm_id_field_id and (
+                            fname == "crm id" or fname == "crmid" or fname == "crm_id" or 
+                            fname == "sf id" or fname == "sfid" or fname == "sf_id" or
+                            fname == "salesforce id" or fname == "salesforce case id" or
+                            fname == "salesforce case" or fname == "case id" or
+                            (("crm" in fname) and ("id" in fname)) or
+                            (("salesforce" in fname) and ("id" in fname)) or
+                            (("sf" in fname) and ("id" in fname) and len(fname) < 15)
+                        ):
+                            crm_id_field_id = field_id
+                            print(f"[field-discovery] ✓ Using CRM ID field: '{field_name}' → {crm_id_field_id}")
                         
                         # Product Name field matching - collect all candidates
                         if "product" in fname and field_id.startswith("customfield"):
@@ -1971,6 +2078,14 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                         for priority, name, fid in product_candidates:
                             print(f"    - '{name}' → {fid} (priority={priority})")
                     
+                    # Select best NCI Severity field from candidates
+                    if severity_candidates:
+                        severity_candidates.sort(reverse=True, key=lambda x: x[2])  # Sort by score
+                        nci_severity_field_id, best_sev_name, _ = severity_candidates[0]
+                        print(f"[field-discovery] ✓ Using NCI Severity field: '{best_sev_name}' → {nci_severity_field_id}")
+                    else:
+                        print(f"[field-discovery] ⚠ No NCI Severity field found - will use built-in priority")
+                    
                     if not product_name_field_id:
                         print(f"[field-discovery] ⚠ WARNING: No 'Product Name' field found in Jira")
                         print(f"[field-discovery] Available custom fields:")
@@ -1982,10 +2097,16 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 nci_severity_field_id = None
                 product_name_field_id = None
                 product_name_field_candidates = []
+                escalated_field_id = None
+                escalation_notes_field_id = None
+                crm_id_field_id = None
             JIRA_FIELD_CACHE["key"] = cache_key
             JIRA_FIELD_CACHE["nciSeverityFieldId"] = nci_severity_field_id
             JIRA_FIELD_CACHE["productNameFieldId"] = product_name_field_id
             JIRA_FIELD_CACHE["productNameFieldCandidates"] = product_name_field_candidates
+            JIRA_FIELD_CACHE["escalatedFieldId"] = escalated_field_id
+            JIRA_FIELD_CACHE["escalationNotesFieldId"] = escalation_notes_field_id
+            JIRA_FIELD_CACHE["crmIdFieldId"] = crm_id_field_id
             JIRA_FIELD_CACHE["expiresAt"] = time.time() + 600
 
         # ── Step 2: Fetch all pages of tickets ──
@@ -2002,9 +2123,15 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
         start_at = 0
         # Explicitly name required fields — /search/jql ignores *all* for custom fields
         base_fields = ["summary", "status", "priority", "assignee", "created",
-                       "components", "description", "labels", "resolution", "resolutiondate", "comment", "issuetype"]
+                       "components", "description", "labels", "resolution", "resolutiondate", "comment", "issuetype", "issuelinks"]
         if nci_severity_field_id:
             base_fields.append(nci_severity_field_id)
+        if escalated_field_id:
+            base_fields.append(escalated_field_id)
+        if escalation_notes_field_id:
+            base_fields.append(escalation_notes_field_id)
+        if crm_id_field_id:
+            base_fields.append(crm_id_field_id)
         # Add ALL product name candidate fields so we can try each one
         for pf_id in product_name_field_candidates:
             if pf_id not in base_fields:
@@ -2178,8 +2305,7 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                     print(f"[product-extract] ⚠ No product name found in any candidate field")
 
             # Priority: try NCI Severity field (auto-discovered), then scan all
-            # custom fields for known NCI values, then fall back to built-in priority.
-            NCI_VALUES = {"blocker", "critical", "major", "moderate"}
+            # Priority: Use NCI Severity field directly, then fall back to built-in priority.
 
             def _extract_field_value(raw: Any) -> Optional[str]:
                 if raw is None:
@@ -2198,27 +2324,21 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
 
             priority_value: Optional[str] = None
 
-            # 1. Use discovered NCI Severity field ID
+            # 1. Use discovered NCI Severity field ID - accept any value
             if nci_severity_field_id:
-                priority_value = _extract_field_value(fields.get(nci_severity_field_id))
+                raw_nci = fields.get(nci_severity_field_id)
+                priority_value = _extract_field_value(raw_nci)
+                if priority_value:
+                    print(f"[priority] Using NCI Severity '{priority_value}' from {nci_severity_field_id} for {issue.get('key')}")
 
-            # 2. Scan ALL custom fields for a value matching NCI severity levels
-            if not priority_value:
-                for k, v in fields.items():
-                    if k.startswith("customfield") and v not in (None, [], {}, ""):
-                        extracted = _extract_field_value(v)
-                        if extracted and extracted.lower() in NCI_VALUES:
-                            priority_value = extracted
-                            print(f"[priority] found NCI value '{extracted}' in field {k} for {issue.get('key')}")
-                            break
-
-            # 3. Fall back to Jira built-in priority
+            # 2. Fall back to Jira built-in priority
             if not priority_value:
                 p = fields.get("priority")
                 bp = (p.get("name") if isinstance(p, dict) else str(p)) if p else None
                 # Treat Jira "Undefined" / None as Unset — don't store noisy defaults
                 if bp and bp.lower() not in ("undefined", "unknown", "none", ""):
                     priority_value = bp
+                    print(f"[priority] Using built-in priority '{priority_value}' for {issue.get('key')}")
 
             if not priority_value:
                 priority_value = "Unset"
@@ -2451,6 +2571,99 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
             elif isinstance(issuetype_raw, str):
                 issue_type_val = issuetype_raw.strip() or None
 
+            # Escalated field (from Jira custom field)
+            escalated_val = None
+            if escalated_field_id:
+                escalated_raw = fields.get(escalated_field_id)
+                # Handle array/list (multi-select or cascading select)
+                if isinstance(escalated_raw, list) and len(escalated_raw) > 0:
+                    first_item = escalated_raw[0]
+                    if isinstance(first_item, dict):
+                        escalated_val = first_item.get("value") or first_item.get("name") or None
+                    elif isinstance(first_item, str):
+                        escalated_val = first_item.strip() or None
+                    else:
+                        escalated_val = str(first_item)
+                elif isinstance(escalated_raw, dict):
+                    # Could be a select field with 'value' or 'name'
+                    escalated_val = escalated_raw.get("value") or escalated_raw.get("name") or None
+                elif isinstance(escalated_raw, str):
+                    escalated_val = escalated_raw.strip() or None
+                elif isinstance(escalated_raw, bool):
+                    escalated_val = "Yes" if escalated_raw else "No"
+                elif escalated_raw is not None:
+                    escalated_val = str(escalated_raw)
+
+            # Escalation Notes field (from Jira custom field)
+            escalation_notes_val = None
+            if escalation_notes_field_id:
+                notes_raw = fields.get(escalation_notes_field_id)
+                # Handle array/list
+                if isinstance(notes_raw, list) and len(notes_raw) > 0:
+                    first_item = notes_raw[0]
+                    if isinstance(first_item, dict):
+                        escalation_notes_val = _extract_adf_text(first_item) or first_item.get("value") or first_item.get("content") or None
+                    elif isinstance(first_item, str):
+                        escalation_notes_val = first_item.strip() or None
+                    else:
+                        escalation_notes_val = str(first_item)
+                elif isinstance(notes_raw, dict):
+                    # Could be ADF content or a rich text field
+                    escalation_notes_val = _extract_adf_text(notes_raw) or notes_raw.get("value") or notes_raw.get("content") or None
+                elif isinstance(notes_raw, str):
+                    escalation_notes_val = notes_raw.strip() or None
+                elif notes_raw is not None:
+                    escalation_notes_val = str(notes_raw)
+
+            # Extract linked issues (BUGs, related tickets, etc.)
+            linked_issues_list = []
+            issue_links_raw = fields.get("issuelinks") or []
+            for link in issue_links_raw:
+                link_type = (link.get("type") or {}).get("name", "")
+                inward = (link.get("type") or {}).get("inward", "")
+                outward = (link.get("type") or {}).get("outward", "")
+                
+                if "inwardIssue" in link:
+                    other = link["inwardIssue"]
+                    other_key = other.get("key", "")
+                    other_summary = (other.get("fields") or {}).get("summary", "")
+                    other_status = ((other.get("fields") or {}).get("status") or {}).get("name", "")
+                    other_type = ((other.get("fields") or {}).get("issuetype") or {}).get("name", "")
+                    linked_issues_list.append({
+                        "key": other_key,
+                        "summary": other_summary,
+                        "status": other_status,
+                        "type": other_type,
+                        "linkType": inward or link_type,
+                    })
+                
+                if "outwardIssue" in link:
+                    other = link["outwardIssue"]
+                    other_key = other.get("key", "")
+                    other_summary = (other.get("fields") or {}).get("summary", "")
+                    other_status = ((other.get("fields") or {}).get("status") or {}).get("name", "")
+                    other_type = ((other.get("fields") or {}).get("issuetype") or {}).get("name", "")
+                    linked_issues_list.append({
+                        "key": other_key,
+                        "summary": other_summary,
+                        "status": other_status,
+                        "type": other_type,
+                        "linkType": outward or link_type,
+                    })
+            
+            linked_issues_json = json.dumps(linked_issues_list) if linked_issues_list else None
+
+            # Extract CRM ID (Salesforce Case ID)
+            crm_id_val = None
+            if crm_id_field_id:
+                crm_raw = fields.get(crm_id_field_id)
+                if isinstance(crm_raw, str):
+                    crm_id_val = crm_raw.strip() or None
+                elif isinstance(crm_raw, dict):
+                    crm_id_val = crm_raw.get("value") or crm_raw.get("name") or None
+                elif crm_raw is not None:
+                    crm_id_val = str(crm_raw).strip() or None
+
             ticket = {
                 "key": issue.get("key", ""),
                 "summary": fields.get("summary") or "",
@@ -2464,6 +2677,11 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                 "resolution_notes": resolution_notes,
                 "labels": labels_csv,
                 "issue_type": issue_type_val,
+                "escalation": escalated_val,
+                "escalation_notes": escalation_notes_val,
+                "linked_issues": linked_issues_json,
+                "crm_id": crm_id_val,
+                "web_links": None,  # populated after batch remote-link fetch
             }
             
             tickets.append(ticket)
@@ -2481,18 +2699,67 @@ def _fetch_from_real_jira_sync(settings: JiraSettings, force_full: bool = False)
                     raw_product = first_issue_fields.get(product_name_field_id)
                     print(f"[fetch] DEBUG: Raw Product Name value from first ticket: {type(raw_product).__name__} = {raw_product}")
         
+        # ── Step 3: Fetch Remote Links (Web Links) for each ticket ──
+        # Jira doesn't include remote links in bulk search; we need per-ticket calls.
+        # Use concurrent threads to speed this up significantly.
+        import concurrent.futures
+        
+        remote_links_base = f"{settings.url.rstrip('/')}/rest/api/3/issue"
+        ticket_key_map = {t["key"]: idx for idx, t in enumerate(tickets)}
+        
+        def _fetch_remote_links(issue_key: str) -> tuple:
+            """Fetch remote links for a single issue. Returns (key, links_json)."""
+            try:
+                resp = _jira_session.get(
+                    f"{remote_links_base}/{issue_key}/remotelink",
+                    auth=auth,
+                    headers=headers,
+                    timeout=(5, 10),
+                )
+                if resp.status_code == 200:
+                    raw_links = resp.json()
+                    if raw_links:
+                        web_links = []
+                        for rl in raw_links:
+                            obj = rl.get("object") or {}
+                            title = obj.get("title") or ""
+                            url = obj.get("url") or ""
+                            if title or url:
+                                web_links.append({"title": title, "url": url})
+                        if web_links:
+                            return (issue_key, json.dumps(web_links))
+            except Exception:
+                pass
+            return (issue_key, None)
+        
+        print(f"[fetch] Fetching remote links (web links) for {len(tickets)} tickets...")
+        fetched_links_count = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(_fetch_remote_links, t["key"]): t["key"] for t in tickets}
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                issue_key, links_json = future.result()
+                if links_json:
+                    idx = ticket_key_map.get(issue_key)
+                    if idx is not None:
+                        tickets[idx]["web_links"] = links_json
+                        fetched_links_count += 1
+                if (i + 1) % 200 == 0:
+                    print(f"[fetch] Remote links progress: {i + 1}/{len(tickets)} checked, {fetched_links_count} with links")
+        
+        print(f"[fetch] Remote links complete: {fetched_links_count}/{len(tickets)} tickets have web links")
+        
         # Batch-insert all tickets at once (much faster than per-row inserts)
         if tickets:
             cursor.executemany('''
                 INSERT OR REPLACE INTO tickets 
-                (jira_key, summary, status, priority, created_date, assignee, description, jira_components, product_name, resolution_notes, labels, issue_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (jira_key, summary, status, priority, created_date, assignee, description, jira_components, product_name, resolution_notes, labels, issue_type, escalation, escalation_notes, linked_issues, crm_id, web_links)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', [
                 (
                     t["key"], t["summary"], t["status"], t["priority"],
                     t["created"], t["assignee"], t["description"],
                     t["jira_components"], t["product_name"],
-                    t["resolution_notes"], t.get("labels"), t.get("issue_type"),
+                    t["resolution_notes"], t.get("labels"), t.get("issue_type"), t.get("escalation"), t.get("escalation_notes"), t.get("linked_issues"), t.get("crm_id"), t.get("web_links"),
                 )
                 for t in tickets
             ])
@@ -2577,9 +2844,29 @@ async def clear_field_cache():
     JIRA_FIELD_CACHE["key"] = None
     JIRA_FIELD_CACHE["nciSeverityFieldId"] = None
     JIRA_FIELD_CACHE["productNameFieldId"] = None
+    JIRA_FIELD_CACHE["productNameFieldCandidates"] = None
+    JIRA_FIELD_CACHE["escalatedFieldId"] = None
+    JIRA_FIELD_CACHE["escalationNotesFieldId"] = None
+    JIRA_FIELD_CACHE["crmIdFieldId"] = None
     JIRA_FIELD_CACHE["expiresAt"] = 0.0
     return {
         "message": "Field cache cleared. Next ticket fetch will rediscover Product Name and other custom fields."
+    }
+
+
+@app.get("/api/field-cache-status")
+async def get_field_cache_status():
+    """Return current field cache state for debugging."""
+    return {
+        "cache": {
+            "key": JIRA_FIELD_CACHE.get("key"),
+            "nciSeverityFieldId": JIRA_FIELD_CACHE.get("nciSeverityFieldId"),
+            "productNameFieldId": JIRA_FIELD_CACHE.get("productNameFieldId"),
+            "escalatedFieldId": JIRA_FIELD_CACHE.get("escalatedFieldId"),
+            "escalationNotesFieldId": JIRA_FIELD_CACHE.get("escalationNotesFieldId"),
+            "crmIdFieldId": JIRA_FIELD_CACHE.get("crmIdFieldId"),
+            "expiresAt": JIRA_FIELD_CACHE.get("expiresAt"),
+        }
     }
 
 
@@ -2596,7 +2883,7 @@ async def get_stored_tickets(
         query = '''
             SELECT jira_key, summary, status, priority, created_date, assignee, description,
                    jira_components, product_name,
-                   component, severity_score, routing_suggestion, confidence_score, issue_type
+                   component, severity_score, routing_suggestion, confidence_score, issue_type, escalation, escalation_notes, linked_issues, crm_id, web_links
             FROM tickets
         '''
 
@@ -2627,6 +2914,18 @@ async def get_stored_tickets(
         
         tickets = []
         for row in rows:
+            linked_issues_parsed = None
+            if row[16]:
+                try:
+                    linked_issues_parsed = json.loads(row[16])
+                except:
+                    pass
+            web_links_parsed = None
+            if row[18]:
+                try:
+                    web_links_parsed = json.loads(row[18])
+                except:
+                    pass
             tickets.append({
                 "key": row[0],
                 "summary": row[1], 
@@ -2641,7 +2940,12 @@ async def get_stored_tickets(
                 "severity_score": row[10],
                 "routing_suggestion": row[11], 
                 "confidence_score": row[12],
-                "issue_type": row[13]
+                "issue_type": row[13],
+                "escalation": row[14],
+                "escalation_notes": row[15],
+                "linked_issues": linked_issues_parsed,
+                "crm_id": row[17],
+                "web_links": web_links_parsed,
             })
         
         return {
@@ -3426,14 +3730,14 @@ async def analyze_tickets():
         
         # Get ALL tickets and re-analyze them
         cursor.execute('''
-            SELECT id, jira_key, summary, description, priority, status
+            SELECT id, jira_key, summary, description, priority, status, escalation
             FROM tickets
         ''')
         
         unanalyzed_tickets = cursor.fetchall()
         
         for ticket in unanalyzed_tickets:
-            ticket_id, key, summary, description, priority, status = ticket
+            ticket_id, key, summary, description, priority, status, existing_escalation = ticket
             
             # Simple keyword-based component analysis
             component = analyze_component(summary, description)
@@ -3447,12 +3751,17 @@ async def analyze_tickets():
             # Calculate confidence score based on keyword matches
             confidence_score = calculate_confidence(summary, description, component)
             
+            # Only calculate escalation if not already set from Jira
+            escalation = existing_escalation
+            if not escalation:
+                escalation = determine_escalation(severity_score, priority, summary, description)
+            
             # Update ticket with analysis results
             cursor.execute('''
                 UPDATE tickets 
-                SET component = ?, severity_score = ?, routing_suggestion = ?, confidence_score = ?
+                SET component = ?, severity_score = ?, routing_suggestion = ?, confidence_score = ?, escalation = ?
                 WHERE id = ?
-            ''', (component, severity_score, routing_suggestion, confidence_score, ticket_id))
+            ''', (component, severity_score, routing_suggestion, confidence_score, escalation, ticket_id))
         
         conn.commit()
         conn.close()
@@ -3549,6 +3858,34 @@ def determine_routing(component: str, severity_score: float, priority: str) -> s
         return "Support"
 
     return "Support" if severity_score < 0.5 else "Engineering"
+
+def determine_escalation(severity_score: float, priority: str, summary: str, description: str) -> str:
+    """Determine escalation level based on severity, priority, and keywords."""
+    
+    text = f"{summary} {description}".lower()
+    p = priority.lower()
+    
+    # Critical escalation keywords
+    critical_keywords = ["outage", "down", "production down", "revenue impact", "security breach", 
+                         "data loss", "urgent", "emergency", "critical failure", "system down"]
+    
+    # High escalation keywords
+    high_keywords = ["escalate", "manager", "sla breach", "customer complaint", "recurring issue",
+                     "multiple customers", "widespread", "major impact", "blocking"]
+    
+    # Check for critical escalation indicators
+    has_critical = any(kw in text for kw in critical_keywords)
+    has_high = any(kw in text for kw in high_keywords)
+    
+    # Determine escalation level
+    if p in ("blocker",) or severity_score >= 0.95 or has_critical:
+        return "Critical"
+    elif p in ("critical",) or severity_score >= 0.80 or has_high:
+        return "High"
+    elif p in ("major",) or severity_score >= 0.60:
+        return "Medium"
+    else:
+        return "Low"
 
 def calculate_confidence(summary: str, description: str, component: str) -> float:
     """Calculate confidence in the analysis."""

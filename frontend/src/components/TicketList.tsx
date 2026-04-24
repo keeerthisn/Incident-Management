@@ -31,15 +31,26 @@ import {
   Select,
   InputLabel,
   FormControl,
+  Tooltip,
+  Popover,
 } from '@mui/material';
 import { 
   Settings as SettingsIcon, 
   ExpandMore, 
   Refresh,
   Psychology,
+  LinkOutlined,
 } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
+
+interface LinkedIssue {
+  key: string;
+  summary: string;
+  status: string;
+  type: string;
+  linkType: string;
+}
 
 interface Ticket {
   key: string;
@@ -55,6 +66,10 @@ interface Ticket {
   severity_score?: number;
   routing_suggestion?: string;
   confidence_score?: number;
+  escalation?: string;
+  escalation_notes?: string;
+  linked_issues?: LinkedIssue[];
+  crm_id?: string;
 }
 
 const TicketList: React.FC = () => {
@@ -76,6 +91,8 @@ const TicketList: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [sortColumn, setSortColumn] = useState<string>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [linksPopoverAnchor, setLinksPopoverAnchor] = useState<HTMLElement | null>(null);
+  const [linksPopoverTicket, setLinksPopoverTicket] = useState<Ticket | null>(null);
 
   // Apply URL query param filters on first mount (from Analytics deep-links)
   useEffect(() => {
@@ -106,6 +123,7 @@ const TicketList: React.FC = () => {
       case 'summary':    return t.summary ?? '';
       case 'status':     return t.status ?? '';
       case 'priority':   return t.priority ?? '';
+      case 'escalation': return t.escalation ?? '';
       case 'assignee':   return t.assignee ?? '';
       case 'created':    return t.created ?? '';
       default:           return '';
@@ -606,13 +624,16 @@ const TicketList: React.FC = () => {
           <TableHead>
             <TableRow>
               {([
-                { id: 'key',      label: 'Jira ID',    width: '8%'  },
-                { id: 'summary',  label: 'Summary',    width: '32%' },
-                { id: 'product',  label: 'Product',    width: '12%' },
-                { id: 'status',   label: 'Status',     width: '9%' },
-                { id: 'priority', label: 'Priority',   width: '9%' },
-                { id: 'assignee', label: 'Assignee',   width: '14%' },
-                { id: 'created',  label: 'Created',    width: '16%' },
+                { id: 'key',      label: 'Jira ID',    width: '7%'  },
+                { id: 'sf_id',    label: 'SF ID',      width: '8%'  },
+                { id: 'summary',  label: 'Summary',    width: '22%' },
+                { id: 'product',  label: 'Product',    width: '9%' },
+                { id: 'status',   label: 'Status',     width: '7%' },
+                { id: 'priority', label: 'Priority',   width: '7%' },
+                { id: 'escalation', label: 'Escalated', width: '7%' },
+                { id: 'links',    label: 'Linked Issues', width: '9%' },
+                { id: 'assignee', label: 'Assignee',   width: '10%' },
+                { id: 'created',  label: 'Created',    width: '14%' },
               ] as { id: string; label: string; width: string }[]).map(col => (
                 <TableCell
                   key={col.id}
@@ -664,6 +685,21 @@ const TicketList: React.FC = () => {
                     </Button>
                   </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
+                    {ticket.crm_id ? (
+                      <Link
+                        href={`https://n-able.lightning.force.com/lightning/r/Case/${ticket.crm_id}/view`}
+                        target="_blank"
+                        rel="noreferrer"
+                        underline="hover"
+                        sx={{ fontSize: '0.8rem' }}
+                      >
+                        {ticket.crm_id.substring(0, 15)}...
+                      </Link>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">—</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
                     <Accordion elevation={0}>
                       <AccordionSummary
                         expandIcon={<ExpandMore fontSize="small" />}
@@ -706,9 +742,46 @@ const TicketList: React.FC = () => {
                       variant={normalizePriority(ticket.priority) === 'Unset' ? 'outlined' : 'filled'}
                     />
                   </TableCell>
-
-
-
+                  <TableCell sx={{ py: 0.8, px: 1.5 }}>
+                    {ticket.escalation ? (
+                      <Chip
+                        label={ticket.escalation}
+                        size="small"
+                        sx={{
+                          bgcolor: ticket.escalation === 'Yes' || ticket.escalation === 'Critical' ? '#b71c1c' :
+                                   ticket.escalation === 'High' ? '#e65100' :
+                                   ticket.escalation === 'Medium' ? '#f57c00' : 
+                                   ticket.escalation === 'No' ? '#4caf50' : '#9e9e9e',
+                          color: '#fff',
+                          fontWeight: 600,
+                        }}
+                      />
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">—</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ py: 0.8, px: 1.5 }}>
+                    {ticket.linked_issues && ticket.linked_issues.length > 0 ? (
+                      <Chip
+                        label={`${ticket.linked_issues.length}`}
+                        size="small"
+                        icon={<LinkOutlined sx={{ fontSize: 14 }} />}
+                        onClick={(e) => {
+                          setLinksPopoverAnchor(e.currentTarget);
+                          setLinksPopoverTicket(ticket);
+                        }}
+                        sx={{
+                          cursor: 'pointer',
+                          bgcolor: 'rgba(25, 118, 210, 0.1)',
+                          color: '#1976d2',
+                          border: '1px solid rgba(25, 118, 210, 0.3)',
+                          '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.2)' },
+                        }}
+                      />
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">—</Typography>
+                    )}
+                  </TableCell>
                   <TableCell sx={{ py: 0.8, px: 1.5 }}>
                     <Typography variant="body2" noWrap title={ticket.assignee}>
                       {ticket.assignee === 'unassigned' ? '—' : ticket.assignee}
@@ -753,6 +826,87 @@ const TicketList: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Linked Issues Popover */}
+      <Popover
+        open={Boolean(linksPopoverAnchor)}
+        anchorEl={linksPopoverAnchor}
+        onClose={() => {
+          setLinksPopoverAnchor(null);
+          setLinksPopoverTicket(null);
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+      >
+        <Box sx={{ p: 2, minWidth: 350, maxWidth: 500 }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5, color: '#1976d2' }}>
+            <LinkOutlined sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
+            Linked Issues for {linksPopoverTicket?.key}
+          </Typography>
+          {linksPopoverTicket?.linked_issues && linksPopoverTicket.linked_issues.length > 0 ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {linksPopoverTicket.linked_issues.map((link, idx) => (
+                <Box 
+                  key={idx} 
+                  sx={{ 
+                    p: 1.5, 
+                    bgcolor: '#f5f5f5', 
+                    borderRadius: 1,
+                    border: '1px solid #e0e0e0',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Chip 
+                      label={link.linkType} 
+                      size="small" 
+                      sx={{ 
+                        fontSize: '0.7rem', 
+                        height: 20,
+                        bgcolor: '#e3f2fd',
+                        color: '#1565c0',
+                      }} 
+                    />
+                    <Link
+                      href={jiraBaseUrl ? `${jiraBaseUrl}/browse/${link.key}` : '#'}
+                      target="_blank"
+                      rel="noreferrer"
+                      underline="hover"
+                      sx={{ fontWeight: 700, fontSize: '0.875rem' }}
+                    >
+                      {link.key}
+                    </Link>
+                    {link.type && (
+                      <Chip 
+                        label={link.type} 
+                        size="small" 
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem', height: 18 }} 
+                      />
+                    )}
+                  </Box>
+                  <Typography variant="body2" sx={{ mb: 0.5, color: '#333' }}>
+                    {link.summary}
+                  </Typography>
+                  <Chip
+                    label={link.status}
+                    size="small"
+                    sx={{
+                      fontSize: '0.7rem',
+                      height: 20,
+                      bgcolor: link.status === 'Done' || link.status === 'Resolved' || link.status === 'Closed' ? '#c8e6c9' :
+                               link.status === 'In Progress' ? '#fff3e0' : '#e0e0e0',
+                      color: link.status === 'Done' || link.status === 'Resolved' || link.status === 'Closed' ? '#2e7d32' :
+                             link.status === 'In Progress' ? '#e65100' : '#616161',
+                    }}
+                  />
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">No linked issues</Typography>
+          )}
+        </Box>
+      </Popover>
     </Box>
   );
 };

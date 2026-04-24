@@ -11,12 +11,20 @@ import {
   CircularProgress,
   Chip,
   Link,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import {
   Psychology,
   AutoAwesome,
   MenuBook,
   OpenInNew,
+  ContentCopy,
+  Check,
+  ExpandMore,
 } from '@mui/icons-material';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../config';
@@ -58,6 +66,7 @@ const RootCauseAnalyzer: React.FC = () => {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [rovoSummary, setRovoSummary] = useState<string | null>(null);
   const [rovoSource, setRovoSource] = useState<string>('');
+  const [copied, setCopied] = useState(false);
   const [rovoLoading, setRovoLoading] = useState(false);
   const [confluenceLink, setConfluenceLink] = useState<{ url: string; title: string } | null>(null);
   const [confluenceLoading, setConfluenceLoading] = useState(false);
@@ -272,6 +281,34 @@ const RootCauseAnalyzer: React.FC = () => {
                       }}
                     />
                   )}
+                  {/* Copy to clipboard button */}
+                  {rovoSummary && (
+                    <Tooltip title={copied ? 'Copied!' : 'Copy summary'}>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          // Convert summary to plain text (strip ** markers)
+                          const plainText = rovoSummary
+                            .replace(/\*\*([^*]+)\*\*/g, '$1')
+                            .trim();
+                          const fullText = result 
+                            ? `Root Cause Category: ${result.rootCauseCategory}\n\n${plainText}`
+                            : plainText;
+                          navigator.clipboard.writeText(fullText);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        sx={{ 
+                          ml: 1, 
+                          color: copied ? '#4caf50' : '#7C3AED',
+                          bgcolor: 'rgba(124,58,237,0.08)',
+                          '&:hover': { bgcolor: 'rgba(124,58,237,0.15)' }
+                        }}
+                      >
+                        {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                      </IconButton>
+                    </Tooltip>
+                  )}
                   {/* Confluence page link */}
                   {confluenceLoading && !confluenceLink && (
                     <CircularProgress size={14} sx={{ ml: 1, color: '#7C3AED' }} />
@@ -321,92 +358,111 @@ const RootCauseAnalyzer: React.FC = () => {
                   </Box>
                 ) : rovoSummary ? (
                   <Box>
-                    {rovoSummary.split('\n').map((line, idx) => {
-                      const trimmed = line.trim();
-                      if (!trimmed) return <Box key={idx} sx={{ height: 12 }} />;
+                    {(() => {
+                      // Parse summary into sections
+                      const sections: { title: string; content: string; icon: string; color: string }[] = [];
+                      const lines = rovoSummary.split('\n');
+                      let currentSection: { title: string; content: string[]; icon: string; color: string } | null = null;
                       
-                      // Render **bold** sections as section headers with icons
-                      const boldMatch = trimmed.match(/^\*\*(.+?)\*\*$/);
-                      if (boldMatch) {
-                        const header = boldMatch[1];
-                        // Skip "Root Cause Category" heading since we show it as a chip above
-                        if (header === 'Root Cause Category') return null;
+                      const getSectionStyle = (header: string) => {
+                        const h = header.toLowerCase();
+                        if (h.includes('problem')) return { icon: '⚠️', color: '#d32f2f' };
+                        if (h.includes('impact')) return { icon: '📊', color: '#f57c00' };
+                        if (h.includes('root cause') || h.includes('details')) return { icon: '🔍', color: '#0288d1' };
+                        if (h.includes('solution') || h.includes('resolution')) return { icon: '✅', color: '#4caf50' };
+                        if (h.includes('status')) return { icon: '📍', color: '#7C3AED' };
+                        if (h.includes('blocker')) return { icon: '🚧', color: '#d32f2f' };
+                        if (h.includes('waiting')) return { icon: '⏳', color: '#f57c00' };
+                        if (h.includes('next step')) return { icon: '🎯', color: '#5B2D91' };
+                        return { icon: '📝', color: '#5B2D91' };
+                      };
+                      
+                      for (const line of lines) {
+                        const trimmed = line.trim();
+                        const boldMatch = trimmed.match(/^\*\*(.+?)\*\*$/);
                         
-                        // Icon mapping for different sections
-                        let icon = null;
-                        let color = '#5B2D91';
-                        if (header === 'Problem') { icon = '⚠️'; color = '#d32f2f'; }
-                        else if (header === 'Impact') { icon = '📊'; color = '#f57c00'; }
-                        else if (header === 'Details') { icon = '📝'; color = '#0288d1'; }
-                        else if (header.includes('Solution')) { icon = '✅'; color = '#4caf50'; }
-                        else if (header === 'Current Status') { icon = '📍'; color = '#7C3AED'; }
-                        else if (header.includes('Blocker')) { icon = '🚧'; color = '#d32f2f'; }
-                        else if (header.includes('Waiting')) { icon = '⏳'; color = '#f57c00'; }
-                        else if (header === 'Next Steps') { icon = '🎯'; color = '#5B2D91'; }
-                        
-                        return (
-                          <Box key={idx} sx={{ mt: 2.5, mb: 1 }}>
-                            <Typography 
-                              variant="subtitle1" 
-                              fontWeight={700} 
-                              sx={{ 
-                                color, 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                gap: 1,
-                                borderLeft: `4px solid ${color}`,
-                                pl: 1.5,
-                                py: 0.5
-                              }}
-                            >
-                              {icon && <span style={{ fontSize: '1.1rem' }}>{icon}</span>}
-                              {header}
-                            </Typography>
-                          </Box>
-                        );
+                        if (boldMatch) {
+                          // Save previous section
+                          if (currentSection && currentSection.content.length > 0) {
+                            sections.push({
+                              title: currentSection.title,
+                              content: currentSection.content.join('\n').trim(),
+                              icon: currentSection.icon,
+                              color: currentSection.color,
+                            });
+                          }
+                          // Start new section
+                          const header = boldMatch[1];
+                          if (header !== 'Root Cause Category') {
+                            const style = getSectionStyle(header);
+                            currentSection = { title: header, content: [], ...style };
+                          } else {
+                            currentSection = null; // Skip root cause category header
+                          }
+                        } else if (currentSection && trimmed) {
+                          currentSection.content.push(trimmed.replace(/\*\*([^*]+)\*\*/g, '$1'));
+                        }
                       }
-                      // Skip the root cause category value line (shown as chip above)
-                      if (idx > 0) {
-                        const prevLine = rovoSummary.split('\n')[idx - 1]?.trim();
-                        if (prevLine === '**Root Cause Category**') return null;
+                      // Save last section
+                      if (currentSection && currentSection.content.length > 0) {
+                        sections.push({
+                          title: currentSection.title,
+                          content: currentSection.content.join('\n').trim(),
+                          icon: currentSection.icon,
+                          color: currentSection.color,
+                        });
                       }
                       
-                      // Check if this is a bullet point
-                      if (trimmed.startsWith('•')) {
-                        return (
-                          <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.8, pl: 1 }}>
-                            <Typography variant="body2" sx={{ color: '#7C3AED', fontWeight: 700 }}>•</Typography>
-                            <Typography variant="body2" sx={{ lineHeight: 1.6, color: '#333' }}>
-                              {trimmed.substring(1).trim()}
-                            </Typography>
-                          </Box>
-                        );
-                      }
-                      
-                      // Render **bold** inline text with better styling for regular content
-                      const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
-                      return (
-                        <Typography 
-                          key={idx} 
-                          variant="body2" 
+                      return sections.map((section, idx) => (
+                        <Accordion 
+                          key={idx}
+                          defaultExpanded={idx === 0}
                           sx={{ 
-                            mb: 1, 
-                            lineHeight: 1.7, 
-                            color: '#333',
-                            bgcolor: 'rgba(124,58,237,0.03)',
-                            p: 1.5,
-                            borderRadius: 1,
-                            border: '1px solid rgba(124,58,237,0.1)'
+                            mb: 1,
+                            boxShadow: 'none', 
+                            border: `1px solid ${section.color}30`,
+                            borderRadius: '8px !important',
+                            '&:before': { display: 'none' },
+                            '&.Mui-expanded': { margin: '0 0 8px 0' },
                           }}
                         >
-                          {parts.map((part, pi) => {
-                            const inlineBold = part.match(/^\*\*(.+?)\*\*$/);
-                            if (inlineBold) return <strong key={pi} style={{ color: '#5B2D91', fontWeight: 700 }}>{inlineBold[1]}</strong>;
-                            return <span key={pi}>{part}</span>;
-                          })}
-                        </Typography>
-                      );
-                    })}
+                          <AccordionSummary 
+                            expandIcon={<ExpandMore sx={{ color: section.color }} />}
+                            sx={{ 
+                              bgcolor: `${section.color}10`,
+                              borderRadius: '8px',
+                              minHeight: '48px !important',
+                              '&.Mui-expanded': { minHeight: '48px !important', borderRadius: '8px 8px 0 0' },
+                              '& .MuiAccordionSummary-content': { margin: '8px 0' },
+                            }}
+                          >
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <span style={{ fontSize: '1.1rem' }}>{section.icon}</span>
+                              <Typography variant="subtitle2" fontWeight={700} sx={{ color: section.color }}>
+                                {section.title}
+                              </Typography>
+                            </Box>
+                          </AccordionSummary>
+                          <AccordionDetails sx={{ pt: 2, pb: 2 }}>
+                            <Box
+                              component="pre"
+                              sx={{
+                                fontFamily: 'inherit',
+                                fontSize: '0.875rem',
+                                lineHeight: 1.8,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                m: 0,
+                                color: '#333',
+                                userSelect: 'text',
+                              }}
+                            >
+                              {section.content}
+                            </Box>
+                          </AccordionDetails>
+                        </Accordion>
+                      ));
+                    })()}
                   </Box>
                 ) : (
                   <Typography variant="body2" color="text.secondary">Summary not available.</Typography>

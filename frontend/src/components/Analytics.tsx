@@ -21,6 +21,8 @@ interface Ticket {
   product_name: string | null;
   issue_type: string | null;
   created: string;
+  escalation: string | null;
+  escalation_notes: string | null;
 }
 
 interface JiraSettings {

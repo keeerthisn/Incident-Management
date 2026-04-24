@@ -19,6 +19,8 @@ interface Ticket {
   assignee: string;
   jira_components?: string;
   product_name?: string;
+  escalation?: string;
+  escalation_notes?: string;
 }
 
 interface JiraSettings {

@@ -19,6 +19,7 @@ import {
   AccountTree,
   Psychology,
   AutoFixHigh,
+  SupportAgent,
 } from '@mui/icons-material';
 
 const drawerWidth = 220;
@@ -36,6 +37,7 @@ const HOVER_BG     = 'rgba(124, 58, 237, 0.10)';
 const menuItems = [
   { text: 'Dashboard',       path: '/',         icon: <DashboardIcon /> },
   { text: 'Tickets',         path: '/tickets',  icon: <ConfirmationNumber /> },
+  { text: 'SF Case Tracker',  path: '/case-tracker', icon: <SupportAgent /> },
   { text: 'Grouped Issues',  path: '/grouped',  icon: <AccountTree /> },
   { text: 'Analytics',       path: '/analytics',icon: <BarChart /> },
   { text: 'Root Cause Analyzer', path: '/root-cause-analyzer', icon: <Psychology /> },

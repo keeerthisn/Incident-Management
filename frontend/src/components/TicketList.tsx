@@ -688,15 +688,9 @@ const TicketList: React.FC = () => {
                   <TableCell sx={{ py: 0.8, px: 1.5, overflow: 'hidden' }}>
                     {ticket.crm_id ? (
                       <Tooltip title={ticket.crm_id} arrow>
-                        <Link
-                          href={`https://n-able.lightning.force.com/lightning/r/Case/${ticket.crm_id}/view`}
-                          target="_blank"
-                          rel="noreferrer"
-                          underline="hover"
-                          sx={{ fontSize: '0.8rem' }}
-                        >
+                        <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
                           {ticket.crm_id.length > 18 ? `${ticket.crm_id.substring(0, 15)}...` : ticket.crm_id}
-                        </Link>
+                        </Typography>
                       </Tooltip>
                     ) : (
                       <Typography variant="body2" color="text.secondary">—</Typography>

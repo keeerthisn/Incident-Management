@@ -123,6 +123,7 @@ const CaseTracker: React.FC = () => {
   const [productFilter, setProductFilter] = useState('all');
   const [groupBy, setGroupBy] = useState<'case' | 'company' | 'product'>('case');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedWebLinks, setExpandedWebLinks] = useState<Set<string>>(new Set());
 
   /* ── fetch tickets ── */
   useEffect(() => {
@@ -524,7 +525,7 @@ const CaseTracker: React.FC = () => {
                     <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
                       SF Cases ({group.webLinks.length})
                     </Typography>
-                    {group.webLinks.slice(0, 10).map((wl, i) => (
+                    {(expandedWebLinks.has(group.key) ? group.webLinks : group.webLinks.slice(0, 10)).map((wl, i) => (
                       <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.3 }}>
                         <OpenInNew sx={{ fontSize: 14, color: '#9CA3AF' }} />
                         <Link
@@ -537,9 +538,24 @@ const CaseTracker: React.FC = () => {
                         </Link>
                       </Box>
                     ))}
-                    {group.webLinks.length > 10 && (
-                      <Typography variant="caption" color="text.secondary">
-                        +{group.webLinks.length - 10} more
+                    {group.webLinks.length > 10 && !expandedWebLinks.has(group.key) && (
+                      <Typography
+                        variant="caption"
+                        color="primary"
+                        sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' }, mt: 0.5, display: 'inline-block' }}
+                        onClick={() => setExpandedWebLinks((prev) => { const next = new Set(prev); next.add(group.key); return next; })}
+                      >
+                        +{group.webLinks.length - 10} more — click to show all
+                      </Typography>
+                    )}
+                    {group.webLinks.length > 10 && expandedWebLinks.has(group.key) && (
+                      <Typography
+                        variant="caption"
+                        color="primary"
+                        sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' }, mt: 0.5, display: 'inline-block' }}
+                        onClick={() => setExpandedWebLinks((prev) => { const next = new Set(prev); next.delete(group.key); return next; })}
+                      >
+                        Show less
                       </Typography>
                     )}
                   </Box>

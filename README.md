@@ -1,4 +1,4 @@
-# Cove Incident Management Tool
+#  Incident Management Tool
 
 N-able themed web app for managing Jira incidents — fetch tickets, group by issue type, filter, and review analytics — all in one place.
 
@@ -6,7 +6,7 @@ N-able themed web app for managing Jira incidents — fetch tickets, group by is
 
 ## 🎯 Overview
 
-The **Cove Incident Management Tool** is a comprehensive incident triage and analysis platform that integrates with Jira and Salesforce to help support teams:
+The ** Incident Management Tool** is a comprehensive incident triage and analysis platform that integrates with Jira and Salesforce to help support teams:
 
 - **Quickly triage** incoming incidents with AI-powered routing suggestions
 - **Identify patterns** across similar issues affecting multiple customers

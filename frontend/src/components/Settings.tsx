@@ -348,7 +348,7 @@ const Settings: React.FC = () => {
                   Click <strong>"Create API token"</strong>
                 </Typography>
                 <Typography component="li" variant="body2" sx={{ mb: 1 }}>
-                  Label it <strong>"Incident Triage Tool"</strong>
+                  Label it <strong>"NCIP Manager"</strong>
                 </Typography>
                 <Typography component="li" variant="body2" sx={{ mb: 1 }}>
                   Copy and paste the token into the <strong>API Token</strong> field

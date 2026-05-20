@@ -735,8 +735,8 @@ def _classify_root_cause(extracted: dict[str, Any]) -> dict[str, Any]:
     }
 
 app = FastAPI(
-    title="Incident Triage API",
-    description="Automated Jira incident triage system",
+    title="NCIP Manager API",
+    description="Automated Jira NCIP triage system",
     version="1.0.0"
 )
 
@@ -751,11 +751,11 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "Incident Triage API is running"}
+    return {"message": "NCIP Manager API is running"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "incident-triage-api"}
+    return {"status": "healthy", "service": "ncip-manager-api"}
 
 # Initialize database
 def init_db():
@@ -2891,7 +2891,7 @@ async def get_stored_tickets(
         query = '''
             SELECT jira_key, summary, status, priority, created_date, assignee, description,
                    jira_components, product_name,
-                   component, severity_score, routing_suggestion, confidence_score, issue_type, escalation, escalation_notes, linked_issues, crm_id, web_links
+                   component, severity_score, routing_suggestion, confidence_score, issue_type, escalation, escalation_notes, linked_issues, crm_id, web_links, labels
             FROM tickets
         '''
 
@@ -2954,6 +2954,7 @@ async def get_stored_tickets(
                 "linked_issues": linked_issues_parsed,
                 "crm_id": row[17],
                 "web_links": web_links_parsed,
+                "labels": row[19],
             })
         
         return {

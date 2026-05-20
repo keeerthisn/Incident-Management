@@ -77,7 +77,7 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
             variant="subtitle1"
             sx={{ color: 'rgba(255,255,255,0.80)', fontWeight: 500, flexGrow: 1, letterSpacing: '0.02em' }}
           >
-            Incident Management
+            NCIP Manager
           </Typography>
         </Toolbar>
       </AppBar>

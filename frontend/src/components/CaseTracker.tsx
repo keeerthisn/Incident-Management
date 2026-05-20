@@ -69,6 +69,7 @@ interface Ticket {
   linked_issues?: LinkedIssue[];
   web_links?: WebLink[];
   crm_id?: string;
+  labels?: string;
 }
 
 interface CaseGroup {
@@ -121,6 +122,8 @@ const CaseTracker: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [productFilter, setProductFilter] = useState('all');
+  const [labelFilter, setLabelFilter] = useState('all');
+  const [escalatedFilter, setEscalatedFilter] = useState('all');
   const [groupBy, setGroupBy] = useState<'case' | 'company' | 'product'>('case');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [expandedWebLinks, setExpandedWebLinks] = useState<Set<string>>(new Set());
@@ -188,6 +191,12 @@ const CaseTracker: React.FC = () => {
   const allStatuses = useMemo(() => Array.from(new Set(caseGroups.flatMap((g) => g.statuses))).sort(), [caseGroups]);
   const allPriorities = useMemo(() => Array.from(new Set(caseGroups.flatMap((g) => g.priorities))).sort(), [caseGroups]);
   const allProducts = useMemo(() => Array.from(new Set(caseGroups.flatMap((g) => g.products))).sort(), [caseGroups]);
+  const allLabels = useMemo(() => Array.from(new Set(
+    tickets.flatMap(t => t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean) : [])
+  )).sort(), [tickets]);
+  const allEscalations = useMemo(() => Array.from(new Set(
+    tickets.map(t => t.escalation).filter((e): e is string => Boolean(e))
+  )).sort(), [tickets]);
 
   /* ── filtered groups ── */
   const filteredGroups = useMemo(() => {
@@ -208,9 +217,16 @@ const CaseTracker: React.FC = () => {
       if (priorityFilter !== 'all' && !g.tickets.some((t) => t.priority === priorityFilter)) return false;
       // Product filter
       if (productFilter !== 'all' && !g.tickets.some((t) => t.product_name === productFilter)) return false;
+      // Label filter
+      if (labelFilter !== 'all' && !g.tickets.some((t) => {
+        const ticketLabels = t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()) : [];
+        return ticketLabels.includes(labelFilter);
+      })) return false;
+      // Escalated filter
+      if (escalatedFilter !== 'all' && !g.tickets.some((t) => t.escalation === escalatedFilter)) return false;
       return true;
     });
-  }, [caseGroups, search, statusFilter, priorityFilter, productFilter]);
+  }, [caseGroups, search, statusFilter, priorityFilter, productFilter, labelFilter, escalatedFilter]);
 
   /* ── re-group by selected mode ── */
   const displayGroups = useMemo(() => {
@@ -387,6 +403,24 @@ const CaseTracker: React.FC = () => {
               <MenuItem value="all">All Products</MenuItem>
               {allProducts.map((p) => (
                 <MenuItem key={p} value={p}>{p}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Label</InputLabel>
+            <Select value={labelFilter} label="Label" onChange={(e) => setLabelFilter(e.target.value)}>
+              <MenuItem value="all">All Labels</MenuItem>
+              {allLabels.map((l) => (
+                <MenuItem key={l} value={l}>{l}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel>Escalated</InputLabel>
+            <Select value={escalatedFilter} label="Escalated" onChange={(e) => setEscalatedFilter(e.target.value)}>
+              <MenuItem value="all">All</MenuItem>
+              {allEscalations.map((e) => (
+                <MenuItem key={e} value={e}>{e}</MenuItem>
               ))}
             </Select>
           </FormControl>

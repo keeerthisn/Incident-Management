@@ -23,6 +23,7 @@ interface Ticket {
   created: string;
   escalation: string | null;
   escalation_notes: string | null;
+  labels: string | null;
 }
 
 interface JiraSettings {
@@ -118,6 +119,8 @@ const Analytics: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [componentFilter, setComponentFilter] = useState('all');
   const [productFilter, setProductFilter] = useState<string[]>([]);
+  const [labelFilter, setLabelFilter] = useState<string[]>([]);
+  const [escalatedFilter, setEscalatedFilter] = useState('all');
   const [recentCount, setRecentCount] = useState(10);
 
   const normalizePriority = (p: string | undefined | null): string => {
@@ -223,9 +226,14 @@ const Analytics: React.FC = () => {
         if (!comps.includes(componentFilter)) return false;
       }
       if (productFilter.length > 0 && !productFilter.includes(t.product_name || '')) return false;
+      if (labelFilter.length > 0) {
+        const ticketLabels = t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean) : [];
+        if (!labelFilter.some(lf => ticketLabels.includes(lf))) return false;
+      }
+      if (escalatedFilter !== 'all' && t.escalation !== escalatedFilter) return false;
       return true;
     });
-  }, [tickets, statusFilter, priorityFilter, componentFilter, productFilter]);
+  }, [tickets, statusFilter, priorityFilter, componentFilter, productFilter, labelFilter, escalatedFilter]);
 
   // Unique filter values (computed from all tickets, not filtered)
   const uniqueStatuses = useMemo(() => Array.from(new Set(tickets.map(t => t.status))).sort(), [tickets]);
@@ -239,6 +247,14 @@ const Analytics: React.FC = () => {
   [tickets]);
   const uniqueProducts = useMemo(() =>
     Array.from(new Set(tickets.map(t => t.product_name).filter(Boolean))).sort() as string[],
+  [tickets]);
+  const uniqueLabels = useMemo(() =>
+    Array.from(new Set(tickets.flatMap(t =>
+      t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean) : []
+    ))).sort(),
+  [tickets]);
+  const uniqueEscalations = useMemo(() =>
+    Array.from(new Set(tickets.map(t => t.escalation).filter((e): e is string => Boolean(e)))).sort(),
   [tickets]);
 
   // Recently opened tickets (sorted by created date, newest first)
@@ -258,7 +274,7 @@ const Analytics: React.FC = () => {
       .slice(0, recentCount);
   }, [filtered, recentCount]);
 
-  const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0;
+  const hasActiveFilters = statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0 || labelFilter.length > 0 || escalatedFilter !== 'all';
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: '#7C3AED' }} /></Box>;
 
@@ -513,11 +529,37 @@ const Analytics: React.FC = () => {
           <MenuItem value="all">All</MenuItem>
           {uniqueComponents.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
         </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="analytics-label-filter-label" shrink>Label</InputLabel>
+          <Select
+            labelId="analytics-label-filter-label"
+            multiple
+            displayEmpty
+            value={labelFilter}
+            onChange={e => { setLabelFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput notched label="Label" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueLabels.map(l => (
+              <MenuItem key={l} value={l}>
+                <Checkbox checked={labelFilter.indexOf(l) > -1} size="small" />
+                <ListItemText primary={l} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          select size="small" label="Escalated" sx={{ minWidth: 140 }}
+          value={escalatedFilter} onChange={e => { setEscalatedFilter(e.target.value); }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniqueEscalations.map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+        </TextField>
         {hasActiveFilters && (
           <Chip
             label="Clear filters"
             size="small"
-            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); }}
+            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); setLabelFilter([]); setEscalatedFilter('all'); }}
             sx={{ borderColor: '#7C3AED', color: '#7C3AED', alignSelf: 'center' }}
             variant="outlined"
           />
@@ -828,7 +870,7 @@ const Analytics: React.FC = () => {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" fontWeight={700} gutterBottom>Incident Categories</Typography>
+              <Typography variant="h6" fontWeight={700} gutterBottom>NCIP Categories</Typography>
               {!hasIssueTypeData ? (
                 <Box sx={{ textAlign: 'center', mt: 3 }}>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

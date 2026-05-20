@@ -267,12 +267,12 @@ const Dashboard: React.FC = () => {
   return (
     <Box>
       <Typography variant="h4" component="h1" gutterBottom>
-        🎯 Incident Triage Dashboard
+        🎯 NCIP Triage Dashboard
       </Typography>
 
       {!jiraConfigured ? (
         <Alert severity="info" sx={{ mb: 3 }}>
-          <strong>Welcome to your Incident Triage Tool!</strong> 
+          <strong>Welcome to your NCIP Manager!</strong> 
           To get started, configure your Jira connection in Settings.
         </Alert>
       ) : showConnectedAlert ? (
@@ -303,7 +303,7 @@ const Dashboard: React.FC = () => {
                     Step 1: Configure Jira Connection
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 2 }}>
-                    Set up your Jira API credentials to fetch incident tickets
+                    Set up your Jira API credentials to fetch NCIP tickets
                   </Typography>
                   <Button 
                     variant="contained" 
@@ -323,7 +323,7 @@ const Dashboard: React.FC = () => {
                     Step 2: Fetch Recent Tickets
                   </Typography>
                   <Typography variant="body2" sx={{ mb: 2 }}>
-                    Import incident tickets from your Jira project
+                    Import NCIP tickets from your Jira project
                   </Typography>
                   <Button 
                     variant={jiraConfigured ? "contained" : "outlined"}

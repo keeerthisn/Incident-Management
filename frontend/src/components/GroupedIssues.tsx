@@ -21,6 +21,7 @@ interface Ticket {
   product_name?: string;
   escalation?: string;
   escalation_notes?: string;
+  labels?: string;
 }
 
 interface JiraSettings {
@@ -147,6 +148,8 @@ const GroupedIssues: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [componentFilter, setComponentFilter] = useState('all');
   const [productFilter, setProductFilter] = useState<string[]>([]);
+  const [labelFilter, setLabelFilter] = useState<string[]>([]);
+  const [escalatedFilter, setEscalatedFilter] = useState('all');
   const [groupBy, setGroupBy] = useState<'category' | 'product'>('category');
 
   const jiraBaseUrl = (() => {
@@ -197,6 +200,11 @@ const GroupedIssues: React.FC = () => {
         if (!comps.includes(componentFilter)) return false;
       }
       if (productFilter.length > 0 && !productFilter.includes(t.product_name || '')) return false;
+      if (labelFilter.length > 0) {
+        const ticketLabels = t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean) : [];
+        if (!labelFilter.some(lf => ticketLabels.includes(lf))) return false;
+      }
+      if (escalatedFilter !== 'all' && t.escalation !== escalatedFilter) return false;
       if (q) {
         return (
           t.summary.toLowerCase().includes(q) ||
@@ -206,7 +214,7 @@ const GroupedIssues: React.FC = () => {
       }
       return true;
     });
-  }, [tickets, search, statusFilter, priorityFilter, componentFilter, productFilter]);
+  }, [tickets, search, statusFilter, priorityFilter, componentFilter, productFilter, labelFilter, escalatedFilter]);
 
   const uniqueStatuses = useMemo(() => Array.from(new Set(tickets.map(t => t.status))).sort(), [tickets]);
   const uniquePriorities = useMemo(() =>
@@ -219,6 +227,14 @@ const GroupedIssues: React.FC = () => {
   [tickets]);
   const uniqueProducts = useMemo(() =>
     Array.from(new Set(tickets.map(t => t.product_name).filter(Boolean))).sort() as string[],
+  [tickets]);
+  const uniqueLabels = useMemo(() =>
+    Array.from(new Set(tickets.flatMap(t =>
+      t.labels ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean) : []
+    ))).sort(),
+  [tickets]);
+  const uniqueEscalations = useMemo(() =>
+    Array.from(new Set(tickets.map(t => t.escalation).filter((e): e is string => Boolean(e)))).sort(),
   [tickets]);
 
   // Group tickets
@@ -372,6 +388,32 @@ const GroupedIssues: React.FC = () => {
           <MenuItem value="all">All</MenuItem>
           {uniqueComponents.map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
         </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="grouped-issues-label-filter-label" shrink>Label</InputLabel>
+          <Select
+            labelId="grouped-issues-label-filter-label"
+            multiple
+            displayEmpty
+            value={labelFilter}
+            onChange={e => { setLabelFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput notched label="Label" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueLabels.map(l => (
+              <MenuItem key={l} value={l}>
+                <Checkbox checked={labelFilter.indexOf(l) > -1} size="small" />
+                <ListItemText primary={l} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          select size="small" label="Escalated" sx={{ minWidth: 140 }}
+          value={escalatedFilter} onChange={e => { setEscalatedFilter(e.target.value); }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniqueEscalations.map(e => <MenuItem key={e} value={e}>{e}</MenuItem>)}
+        </TextField>
         <TextField
           select size="small" label="Group By" sx={{ minWidth: 140 }}
           value={groupBy} onChange={e => { setGroupBy(e.target.value as 'category' | 'product'); setExpanded({}); }}
@@ -379,11 +421,11 @@ const GroupedIssues: React.FC = () => {
           <MenuItem value="category">Issues</MenuItem>
           <MenuItem value="product">Products</MenuItem>
         </TextField>
-        {(statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0) && (
+        {(statusFilter !== 'all' || priorityFilter !== 'all' || componentFilter !== 'all' || productFilter.length > 0 || labelFilter.length > 0 || escalatedFilter !== 'all') && (
           <Chip
             label="Clear filters"
             size="small"
-            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); }}
+            onClick={() => { setStatusFilter('all'); setPriorityFilter('all'); setComponentFilter('all'); setProductFilter([]); setLabelFilter([]); setEscalatedFilter('all'); }}
             sx={{ alignSelf: 'center', cursor: 'pointer', bgcolor: '#f3e5f5', color: '#5B2D91' }}
           />
         )}

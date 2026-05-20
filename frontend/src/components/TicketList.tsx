@@ -70,6 +70,7 @@ interface Ticket {
   escalation_notes?: string;
   linked_issues?: LinkedIssue[];
   crm_id?: string;
+  labels?: string;
 }
 
 const TicketList: React.FC = () => {
@@ -85,6 +86,8 @@ const TicketList: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [productFilter, setProductFilter] = useState<string[]>([]);
   const [componentFilter, setComponentFilter] = useState<string>('all');
+  const [labelFilter, setLabelFilter] = useState<string[]>([]);
+  const [escalatedFilter, setEscalatedFilter] = useState<string>('all');
   const [showAnalyzedOnly, setShowAnalyzedOnly] = useState(false);
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [page, setPage] = useState(0);
@@ -357,6 +360,18 @@ const TicketList: React.FC = () => {
       )
     )
   ).sort();
+  const uniqueLabels = Array.from(
+    new Set(
+      tickets.flatMap(t =>
+        t.labels
+          ? t.labels.split(/[,\s]+/).map(l => l.trim()).filter(Boolean)
+          : []
+      )
+    )
+  ).sort();
+  const uniqueEscalations = Array.from(
+    new Set(tickets.map(t => t.escalation).filter((e): e is string => Boolean(e)))
+  ).sort();
 
   const filteredTickets = tickets.filter((t) => {
     return (
@@ -371,6 +386,12 @@ const TicketList: React.FC = () => {
           ? t.jira_components.split(',').map(c => c.trim()).includes(componentFilter)
           : false
       )) &&
+      (labelFilter.length === 0 || (
+        t.labels
+          ? labelFilter.some(lf => t.labels!.split(/[,\s]+/).map(l => l.trim()).includes(lf))
+          : false
+      )) &&
+      (escalatedFilter === 'all' || t.escalation === escalatedFilter) &&
       (!showAnalyzedOnly || !!t.routing_suggestion) &&
       (!showUnassignedOnly || t.assignee === 'unassigned')
     );
@@ -401,7 +422,7 @@ const TicketList: React.FC = () => {
     return (
       <Box>
         <Typography variant="h4" component="h1" gutterBottom>
-          Incident Tickets
+          NCIP Tickets
         </Typography>
 
         <Alert severity="info" sx={{ mb: 3 }}>
@@ -436,7 +457,7 @@ const TicketList: React.FC = () => {
                 Ready to Import Tickets? 
               </Typography>
               <Typography variant="body2" color="textSecondary" paragraph>
-                Connect to your Jira instance to automatically fetch and analyze incident tickets.
+                Connect to your Jira instance to automatically fetch and analyze NCIP tickets.
               </Typography>
               <Button 
                 variant="contained" 
@@ -461,6 +482,8 @@ const TicketList: React.FC = () => {
     setPriorityFilter('all');
     setProductFilter([]);
     setComponentFilter('all');
+    setLabelFilter([]);
+    setEscalatedFilter('all');
     setShowAnalyzedOnly(false);
     setShowUnassignedOnly(false);
   };
@@ -469,7 +492,7 @@ const TicketList: React.FC = () => {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4" component="h1">
-          Incident Tickets ({filteredTickets.length}/{tickets.length})
+          NCIP Tickets ({filteredTickets.length}/{tickets.length})
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Chip
@@ -546,6 +569,38 @@ const TicketList: React.FC = () => {
           <MenuItem value="all">All</MenuItem>
           {uniqueComponents.map((c) => (
             <MenuItem key={c} value={c}>{c}</MenuItem>
+          ))}
+        </TextField>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel id="ticket-label-filter-label" shrink>Label</InputLabel>
+          <Select
+            labelId="ticket-label-filter-label"
+            multiple
+            displayEmpty
+            value={labelFilter}
+            onChange={e => { setLabelFilter(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value); }}
+            input={<OutlinedInput notched label="Label" />}
+            renderValue={(selected) => selected.length === 0 ? 'All' : selected.join(', ')}
+          >
+            {uniqueLabels.map(l => (
+              <MenuItem key={l} value={l}>
+                <Checkbox checked={labelFilter.indexOf(l) > -1} size="small" />
+                <ListItemText primary={l} />
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          select
+          label="Escalated"
+          size="small"
+          sx={{ minWidth: 140 }}
+          value={escalatedFilter}
+          onChange={(e) => setEscalatedFilter(e.target.value)}
+        >
+          <MenuItem value="all">All</MenuItem>
+          {uniqueEscalations.map((e) => (
+            <MenuItem key={e} value={e}>{e}</MenuItem>
           ))}
         </TextField>
       </Box>
